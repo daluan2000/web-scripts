@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "vite": "^5.4.21"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3"
   }
 }
