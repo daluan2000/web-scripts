@@ -1,0 +1,14 @@
+{
+  "name": "my-userscripts",
+  "version": "1.0.0",
+  "description": "多入口油猴脚本项目",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "preview": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}

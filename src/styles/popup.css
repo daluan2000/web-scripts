@@ -1,0 +1,94 @@
+/* ===========================
+   弹窗样式
+   =========================== */
+
+/* 弹窗容器 */
+.userscript-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 320px;
+  max-width: 90vw;
+  max-height: 90vh;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 999999;
+  overflow: hidden;
+}
+
+/* 弹窗头部 */
+.userscript-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.userscript-popup-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.userscript-popup-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.userscript-popup-close:hover {
+  background-color: #f5f5f5;
+}
+
+.userscript-popup-close::before,
+.userscript-popup-close::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 2px;
+  background-color: #8c8c8c;
+}
+
+.userscript-popup-close::before {
+  transform: rotate(45deg);
+}
+
+.userscript-popup-close::after {
+  transform: rotate(-45deg);
+}
+
+/* 弹窗内容 */
+.userscript-popup-body {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: calc(90vh - 120px);
+}
+
+/* 弹窗底部 */
+.userscript-popup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* 移动端适配 */
+@media (max-width: 480px) {
+  .userscript-popup {
+    width: 95vw;
+    min-width: unset;
+  }
+}
