@@ -15,13 +15,14 @@
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
   z-index: 2147483647;
   transition: all 0.3s ease;
+  touch-action: none;
 }
 
 #id-floating-btn:hover {
@@ -31,6 +32,15 @@
 
 #id-floating-btn.active {
   background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+#id-floating-btn.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+#id-floating-btn.dragging:hover {
+  transform: none;
 }
 
 #id-floating-btn svg {
@@ -332,6 +342,13 @@
 .id-status {
   font-size: 12px;
   color: #666;
+}
+
+.id-downloaded-count {
+  font-size: 12px;
+  color: #4a5568;
+  margin-right: 20px;
+  white-space: nowrap;
 }
 
 /* 改变大小手柄 */

@@ -4,7 +4,7 @@
  * 统一管理脚本的本地存储
  */
 
-import { getStorageKey } from './config.js';
+import { config, getStorageKey } from './config.js';
 
 /**
  * 设置存储值
@@ -54,10 +54,11 @@ export async function removeItem(key) {
 export async function getAllItems() {
   const keys = await GM_listValues();
   const items = {};
+  const prefix = config.storagePrefix;
 
   for (const key of keys) {
-    if (key.startsWith('userscript_')) {
-      const shortKey = key.replace('userscript_', '');
+    if (key.startsWith(prefix)) {
+      const shortKey = key.replace(prefix, '');
       items[shortKey] = await getItem(shortKey);
     }
   }
@@ -71,8 +72,9 @@ export async function getAllItems() {
  */
 export async function clearAll() {
   const keys = await GM_listValues();
+  const prefix = config.storagePrefix;
   for (const key of keys) {
-    if (key.startsWith('userscript_')) {
+    if (key.startsWith(prefix)) {
       GM_setValue(key, undefined);
     }
   }

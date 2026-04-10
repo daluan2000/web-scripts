@@ -3,6 +3,7 @@
  * 支持批量下载图片文件
  */
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
+import { logger } from '@/shared/logger.js';
 
 export class BatchDownloader {
   /**
@@ -19,6 +20,7 @@ export class BatchDownloader {
     this.isDownloading = false;
     this.successCount = 0;
     this.failedCount = 0;
+    this.successUrls = [];
   }
 
   /**
@@ -27,7 +29,7 @@ export class BatchDownloader {
    */
   download(images) {
     if (this.isDownloading) {
-      console.warn('下载进行中，请稍候');
+      logger.warn('下载进行中，请稍候');
       return;
     }
 
@@ -40,6 +42,12 @@ export class BatchDownloader {
     this.isDownloading = true;
     this.successCount = 0;
     this.failedCount = 0;
+    this.successUrls = [];
+
+    logger.info('开始批量下载', {
+      total: this.downloadQueue.length,
+      prefix: this.prefix,
+    });
 
     this.processQueue();
   }
@@ -50,7 +58,12 @@ export class BatchDownloader {
   async processQueue() {
     if (this.downloadQueue.length === 0) {
       this.isDownloading = false;
-      this.onComplete(this.successCount, this.failedCount);
+      logger.info('批量下载完成', {
+        success: this.successCount,
+        failed: this.failedCount,
+        successUrls: this.successUrls.length,
+      });
+      this.onComplete(this.successCount, this.failedCount, this.successUrls);
       return;
     }
 
@@ -63,8 +76,9 @@ export class BatchDownloader {
     try {
       await this.downloadFile(item.src, item.filename);
       this.successCount++;
+      this.successUrls.push(item.src);
     } catch (error) {
-      console.error(`下载失败: ${item.src}`, error);
+      logger.error(`下载失败: ${item.src}`, error);
       this.failedCount++;
     }
 
@@ -99,7 +113,7 @@ export class BatchDownloader {
     } catch (error) {
       // 如果 fetch 失败，非 data URL 尝试直接下载（跨域限制）
       if (!isDataUrl) {
-        console.warn(`fetch 下载失败，尝试直接下载: ${url}`);
+        logger.warn(`fetch 下载失败，尝试直接下载: ${url}`);
         this.triggerDownload(url, filename);
         return;
       }
@@ -133,7 +147,7 @@ export class BatchDownloader {
         };
       }
 
-      console.warn('动态 WebP 转 GIF 失败，回退为原始 WebP 下载');
+      logger.warn('动态 WebP 转 GIF 失败，回退为原始 WebP 下载');
       return {
         blob,
         filename: this.replaceExtension(filename, 'webp'),
@@ -148,7 +162,7 @@ export class BatchDownloader {
       };
     }
 
-    console.warn('静态 WebP 转 PNG 失败，回退为原始 WebP 下载');
+    logger.warn('静态 WebP 转 PNG 失败，回退为原始 WebP 下载');
     return {
       blob,
       filename: this.replaceExtension(filename, 'webp'),
@@ -221,7 +235,7 @@ export class BatchDownloader {
 
       return false;
     } catch (error) {
-      console.warn('WebP 动静态检测失败:', error);
+      logger.warn('WebP 动静态检测失败:', error);
       return false;
     }
   }
@@ -268,7 +282,7 @@ export class BatchDownloader {
 
       return pngBlob || null;
     } catch (error) {
-      console.warn('静态 WebP 转 PNG 失败:', error);
+      logger.warn('静态 WebP 转 PNG 失败:', error);
       return null;
     }
   }
@@ -280,7 +294,7 @@ export class BatchDownloader {
    */
   async convertAnimatedWebpToGif(blob) {
     if (typeof ImageDecoder === 'undefined') {
-      console.warn('当前浏览器不支持 ImageDecoder，无法将动态 WebP 转为 GIF');
+      logger.warn('当前浏览器不支持 ImageDecoder，无法将动态 WebP 转为 GIF');
       return null;
     }
 
@@ -350,7 +364,7 @@ export class BatchDownloader {
       gif.finish();
       return new Blob([gif.bytesView()], { type: 'image/gif' });
     } catch (error) {
-      console.warn('动态 WebP 转 GIF 失败:', error);
+      logger.warn('动态 WebP 转 GIF 失败:', error);
       return null;
     } finally {
       if (decoder && typeof decoder.close === 'function') {

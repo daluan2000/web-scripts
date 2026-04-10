@@ -2,6 +2,7 @@
  * 图片增强器模块
  * 定义各网站特定的图片 URL 处理规则
  */
+import { logger } from '@/shared/logger.js';
 
 /**
  * 图片增强规则接口
@@ -16,14 +17,17 @@
 
 /**
  * B站（bilibili/哗哩哗哩）图片增强规则
- * URL 格式: https://i0.hdslb.com/bfs/article/xxx.jpg@1256w_708h_!web-article-pic.avif
+ * URL 格式:
+ * 1) https://i0.hdslb.com/bfs/article/xxx.jpg@1256w_708h_!web-article-pic.avif
+ * 2) https://i0.hdslb.com/bfs/archive/xxx.jpg@672w_378h_1c_!web-home-common-cover
+ * 3) https://i0.hdslb.com/bfs/vc/xxx.png@1c.webp
  *
  * 测试结论（2025年）：
- * 1. 原 jpg 不存在（返回 500）
- * 2. B站只提供 avif 格式的图片处理
- * 3. 传很大尺寸参数会返回原始尺寸
+ * 1. 原图大多需要通过 @ 参数获取，直接去掉参数可能失效
+ * 2. 既有 `@参数.avif` 也有 `@参数` 两种链接形态
+ * 3. 传很大尺寸参数通常会回落到可用最大尺寸
  *
- * 处理策略：直接请求 3840w 获取原图
+ * 处理策略：统一改写为 3840w，保留原有输出格式（若有）
  */
 const bilibiliEnhancer = {
   name: 'bilibili',
@@ -45,16 +49,29 @@ const bilibiliEnhancer = {
       return url;
     }
 
-    // 检测是否是处理过的 avif 图片
-    const avifMatch = url.match(/^(.+\.(?:jpg|jpeg|png))@(.+)\.(avif|awebp)$/i);
+    // 先拆 query，避免处理参数时误伤查询串
+    const queryIndex = url.indexOf('?');
+    const path = queryIndex === -1 ? url : url.slice(0, queryIndex);
+    const query = queryIndex === -1 ? '' : url.slice(queryIndex);
 
-    if (avifMatch) {
-      const [, baseUrl, , format] = avifMatch;
-      // B站策略：传很大尺寸返回原始尺寸
-      return `${baseUrl}@3840w.${format}`;
+    // B站图片处理参数从第一个 @ 开始
+    const atIndex = path.indexOf('@');
+    if (atIndex === -1) {
+      return url;
     }
 
-    return url;
+    const baseUrl = path.slice(0, atIndex);
+    const transformPart = path.slice(atIndex + 1);
+
+    // 兼容 `@xxx.avif` / `@xxx.webp` / `@xxx.awebp`
+    const formatMatch = transformPart.match(/\.([a-z0-9]+)$/i);
+    const format = formatMatch ? formatMatch[1].toLowerCase() : '';
+
+    if (format === 'avif' || format === 'awebp' || format === 'webp') {
+      return `${baseUrl}@3840w.${format}${query}`;
+    }
+
+    return `${baseUrl}@3840w${query}`;
   },
 };
 
@@ -212,7 +229,7 @@ export function enhanceImageUrls(urls) {
  */
 export function registerEnhancer(rule) {
   if (!rule.name || !rule.urlPattern || !rule.enhance) {
-    console.error('无效的增强规则:', rule);
+    logger.error('无效的增强规则:', rule);
     return;
   }
 

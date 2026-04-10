@@ -1,4 +1,5 @@
 import { createElement, removeElement } from '@/shared/dom.js';
+import { enableDraggable } from '@/shared/draggable.js';
 import { showPanel, hidePanel } from './floatingButton.js';
 
 /**
@@ -35,6 +36,7 @@ export function createPanel() {
     <div class="id-image-grid"></div>
     <div class="id-panel-footer">
       <span class="id-status">点击「捕获图片」开始</span>
+      <span class="id-downloaded-count" id="id-downloaded-count">历史下载数: 0</span>
       <div class="id-resize-handle"></div>
     </div>
   `;
@@ -61,50 +63,15 @@ export function createPanel() {
  */
 function initDraggable(panel) {
   const header = panel.querySelector('.id-panel-header');
-  let isDragging = false;
-  let startX, startY, startLeft, startTop;
-
-  header.addEventListener('mousedown', (e) => {
-    // 不允许在关闭按钮上拖拽
-    if (e.target.closest('.id-panel-close')) return;
-
-    isDragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startLeft = panel.offsetLeft;
-    startTop = panel.offsetTop;
-
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'move';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    let newLeft = startLeft + dx;
-    let newTop = startTop + dy;
-
-    // 限制在视口内
-    const rect = panel.getBoundingClientRect();
-    const maxLeft = window.innerWidth - rect.width;
-    const maxTop = window.innerHeight - rect.height;
-
-    newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-    newTop = Math.max(0, Math.min(newTop, maxTop));
-
-    panel.style.left = newLeft + 'px';
-    panel.style.top = newTop + 'px';
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (isDragging) {
-      isDragging = false;
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    }
+  enableDraggable({
+    target: panel,
+    handle: header,
+    bodyCursor: 'move',
+    removeTransformOnStart: true,
+    shouldStart: (e) => {
+      // 不允许在关闭按钮上拖拽
+      return !e.target.closest('.id-panel-close');
+    },
   });
 }
 

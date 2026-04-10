@@ -1,4 +1,5 @@
 import { createElement } from '@/shared/dom.js';
+import { enableDraggable } from '@/shared/draggable.js';
 
 /**
  * 悬浮按钮模块
@@ -14,7 +15,6 @@ export function initFloatingButton(options) {
   const button = createElement('div', {
     id: 'id-floating-btn',
     title: '图片批量下载器',
-    onClick: () => options.onToggle(),
   }, `
     <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
       <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
@@ -22,6 +22,12 @@ export function initFloatingButton(options) {
   `);
 
   document.body.appendChild(button);
+
+  enableDraggable({
+    target: button,
+    onClick: () => options.onToggle(),
+    dragClassName: 'dragging',
+  });
 }
 
 /**

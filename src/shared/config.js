@@ -16,6 +16,13 @@ export const config = {
 
   // 存储键名前缀
   storagePrefix: 'userscript_',
+
+  // imageDownloader 专用配置
+  imageDownloader: {
+    storageKeys: {
+      downloadedUrls: 'imageDownloader_downloaded_urls',
+    },
+  },
 };
 
 /**
