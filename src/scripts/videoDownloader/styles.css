@@ -1,0 +1,453 @@
+/* 视频批量下载器样式 */
+
+#vd-floating-btn {
+  position: fixed;
+  bottom: 92px;
+  right: 30px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0ea5a4 0%, #f59e0b 100%);
+  color: #ffffff;
+  border: none;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(14, 165, 164, 0.38);
+  z-index: 2147483647;
+  transition: all 0.25s ease;
+  touch-action: none;
+}
+
+#vd-floating-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 8px 22px rgba(245, 158, 11, 0.4);
+}
+
+#vd-floating-btn.active {
+  background: linear-gradient(135deg, #0f766e 0%, #ea580c 100%);
+}
+
+#vd-floating-btn.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+#vd-floating-btn.dragging:hover {
+  transform: none;
+}
+
+#vd-floating-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.vd-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 620px;
+  height: 460px;
+  min-width: 320px;
+  min-height: 220px;
+  background: #fefefe;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(3, 38, 55, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 2147483646;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.vd-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #0f766e 0%, #0ea5a4 55%, #f59e0b 100%);
+  color: #ffffff;
+  cursor: move;
+  user-select: none;
+}
+
+.vd-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.vd-panel-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vd-panel-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.vd-panel-note {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #0c4a6e;
+  background: linear-gradient(90deg, #fef9c3 0%, #ffedd5 100%);
+  border-bottom: 1px solid #fed7aa;
+}
+
+.vd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f4f8fa;
+  border-bottom: 1px solid #d6e3ea;
+  flex-wrap: wrap;
+}
+
+.vd-toolbar-spacer {
+  flex: 1;
+}
+
+.vd-btn {
+  padding: 8px 14px;
+  border-radius: 7px;
+  border: 1px solid #b9c8d0;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vd-btn:hover:not(:disabled) {
+  background: #eef6f8;
+}
+
+.vd-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.vd-btn-primary {
+  background: #0ea5a4;
+  color: #ffffff;
+  border-color: #0f766e;
+}
+
+.vd-btn-primary:hover:not(:disabled) {
+  background: #0f766e;
+}
+
+.vd-btn-success {
+  background: #f59e0b;
+  color: #ffffff;
+  border-color: #d97706;
+}
+
+.vd-btn-success:hover:not(:disabled) {
+  background: #ea580c;
+}
+
+.vd-btn-warning {
+  background: #f97316;
+  color: #ffffff;
+  border-color: #ea580c;
+}
+
+.vd-btn-warning:hover:not(:disabled) {
+  background: #ea580c;
+}
+
+.vd-prefix-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.vd-input {
+  width: 100px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid #b8c5cf;
+  outline: none;
+  font-size: 13px;
+}
+
+.vd-input:focus {
+  border-color: #0ea5a4;
+  box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.18);
+}
+
+.vd-video-grid {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 10px;
+  align-content: start;
+  background: linear-gradient(180deg, #f7fafc 0%, #f1f5f9 100%);
+}
+
+.vd-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 42px 10px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.vd-video-item {
+  position: relative;
+  min-height: 185px;
+  background: #ffffff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.vd-video-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.2);
+}
+
+.vd-video-item.selected {
+  box-shadow: 0 0 0 3px #0ea5a4;
+}
+
+.vd-video-thumb {
+  position: relative;
+  width: 100%;
+  min-height: 110px;
+  background: linear-gradient(135deg, #1f2937 0%, #0f172a 100%);
+  overflow: hidden;
+}
+
+.vd-video-thumb video,
+.vd-video-thumb img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vd-video-thumb-fallback::before {
+  content: 'VIDEO';
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-size: 12px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.vd-play-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(15, 118, 110, 0.85);
+  color: #ffffff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vd-checkbox {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.vd-video-item:hover .vd-checkbox,
+.vd-video-item.selected .vd-checkbox {
+  opacity: 1;
+}
+
+.vd-video-item.selected .vd-checkbox {
+  background: #0ea5a4;
+}
+
+.vd-video-item.selected .vd-checkbox svg rect {
+  fill: #0ea5a4;
+}
+
+.vd-video-info {
+  padding: 8px;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.vd-filename {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #1e293b;
+  word-break: break-all;
+}
+
+.vd-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.vd-badge {
+  display: inline-flex;
+  width: fit-content;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 999px;
+}
+
+.vd-badge-hls {
+  background: #cffafe;
+  color: #115e59;
+}
+
+.vd-badge-unsupported {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.vd-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #eff6f9;
+  border-top: 1px solid #d6e3ea;
+  position: relative;
+}
+
+.vd-status {
+  font-size: 12px;
+  color: #334155;
+}
+
+.vd-downloaded-count {
+  font-size: 12px;
+  color: #0f766e;
+  margin-right: 20px;
+  white-space: nowrap;
+}
+
+.vd-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    #9ca3af 50%,
+    #9ca3af 60%,
+    transparent 60%,
+    transparent 70%,
+    #9ca3af 70%,
+    #9ca3af 80%,
+    transparent 80%
+  );
+}
+
+.vd-video-grid::-webkit-scrollbar {
+  width: 8px;
+}
+
+.vd-video-grid::-webkit-scrollbar-track {
+  background: #e5edf1;
+  border-radius: 4px;
+}
+
+.vd-video-grid::-webkit-scrollbar-thumb {
+  background: #9fb7c2;
+  border-radius: 4px;
+}
+
+.vd-video-grid::-webkit-scrollbar-thumb:hover {
+  background: #7f9aa7;
+}
+
+@media (max-width: 680px) {
+  .vd-panel {
+    width: 95%;
+    height: 82%;
+  }
+
+  .vd-toolbar {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .vd-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .vd-video-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    padding: 8px;
+  }
+}
+
+@media (max-width: 520px) {
+  .vd-panel {
+    width: 100%;
+    height: 100%;
+    min-width: 100%;
+    border-radius: 0;
+  }
+
+  .vd-video-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  }
+
+  .vd-prefix-label {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .vd-input {
+    flex: 1;
+    width: auto;
+  }
+}

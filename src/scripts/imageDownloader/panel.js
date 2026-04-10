@@ -27,6 +27,7 @@ export function createPanel() {
       <button class="id-btn id-btn-success" id="id-download" disabled>
         下载选中
       </button>
+      <button class="id-btn id-btn-warning" id="id-clear-storage">清除存储</button>
       <div class="id-toolbar-spacer"></div>
       <label class="id-prefix-label">
         文件前缀:

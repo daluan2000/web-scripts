@@ -15,6 +15,7 @@ export async function request(url, options = {}) {
     headers = {},
     body = null,
     dataType = 'json',
+    responseType = '',
     timeout = 30000,
   } = options;
 
@@ -24,12 +25,21 @@ export async function request(url, options = {}) {
       url,
       headers,
       timeout,
+      responseType,
       onload: (response) => {
         if (response.status >= 200 && response.status < 300) {
           try {
-            const data = dataType === 'json'
-              ? JSON.parse(response.responseText)
-              : response.responseText;
+            let data;
+            if (responseType === 'blob' || responseType === 'arraybuffer') {
+              data = response.response;
+            } else if (dataType === 'text') {
+              data = response.responseText;
+            } else if (dataType === 'json') {
+              data = JSON.parse(response.responseText);
+            } else {
+              data = response.responseText;
+            }
+
             resolve({ data, status: response.status, headers: response.responseHeaders });
           } catch (e) {
             resolve({ data: response.responseText, status: response.status });
@@ -44,7 +54,9 @@ export async function request(url, options = {}) {
 
     if (body) {
       xhr.data = typeof body === 'string' ? body : JSON.stringify(body);
-      xhr.headers['Content-Type'] = 'application/json';
+      if (!xhr.headers['Content-Type'] && !xhr.headers['content-type']) {
+        xhr.headers['Content-Type'] = 'application/json';
+      }
     }
 
     GM_xmlhttpRequest(xhr);

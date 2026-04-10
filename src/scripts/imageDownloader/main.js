@@ -32,8 +32,8 @@ import { createPanel } from '@/scripts/imageDownloader/panel.js';
 import { getActiveEnhancerName, getEnhancerDisplayName } from '@/scripts/imageDownloader/imageEnhancers.js';
 
 const SHORTCUT_KEY = 'i'; // 默认使用 Ctrl+Shift+I 触发
-const DOWNLOADED_URLS_KEY =
-  config.imageDownloader?.storageKeys?.downloadedUrls || 'imageDownloader_downloaded_urls';
+const DOWNLOADED_HISTORY_KEY =
+  config.imageDownloader?.storageKeys?.downloadHistory || 'imageDownloader_download_history';
 
 (function () {
   'use strict';
@@ -47,36 +47,50 @@ const DOWNLOADED_URLS_KEY =
   // 全局状态
   let currentImages = [];
   let selectedImages = [];
-  const downloadedUrls = new Set();
+  const downloadHistory = [];
   let shortcutEnabled = true;
 
   function updateDownloadedCount(downloadedCountText) {
     if (!downloadedCountText) return;
-    downloadedCountText.textContent = `历史下载数: ${downloadedUrls.size}`;
+    downloadedCountText.textContent = `历史下载数: ${downloadHistory.length}`;
   }
 
-  async function loadDownloadedUrls(downloadedCountText) {
+  function normalizeHistoryRecord(record) {
+    if (record && typeof record === 'object' && typeof record.url === 'string' && record.url) {
+      return {
+        url: record.url,
+        downloadedAt: typeof record.downloadedAt === 'string' ? record.downloadedAt : null,
+      };
+    }
+
+    return null;
+  }
+
+  async function loadDownloadHistory(downloadedCountText) {
     try {
-      const storedUrls = await getItem(DOWNLOADED_URLS_KEY, []);
-      if (Array.isArray(storedUrls)) {
-        storedUrls.forEach((url) => {
-          if (typeof url === 'string' && url) {
-            downloadedUrls.add(url);
+      const storedHistory = await getItem(DOWNLOADED_HISTORY_KEY, []);
+
+      if (Array.isArray(storedHistory)) {
+        storedHistory.forEach((record) => {
+          const normalized = normalizeHistoryRecord(record);
+          if (normalized) {
+            downloadHistory.push(normalized);
           }
         });
       }
+
       updateDownloadedCount(downloadedCountText);
-      logger.info('已加载下载历史', { count: downloadedUrls.size });
+      logger.info('已加载下载历史', { count: downloadHistory.length });
     } catch (error) {
       logger.error('读取下载历史失败', error);
       updateDownloadedCount(downloadedCountText);
     }
   }
 
-  async function saveDownloadedUrls() {
+  async function saveDownloadHistory() {
     try {
-      await setItem(DOWNLOADED_URLS_KEY, Array.from(downloadedUrls));
-      logger.debug('下载历史已保存', { count: downloadedUrls.size });
+      await setItem(DOWNLOADED_HISTORY_KEY, downloadHistory);
+      logger.debug('下载历史已保存', { count: downloadHistory.length });
     } catch (error) {
       logger.error('保存下载历史失败', error);
     }
@@ -151,12 +165,13 @@ const DOWNLOADED_URLS_KEY =
   const selectAllBtn = panel.querySelector('#id-select-all');
   const selectNoneBtn = panel.querySelector('#id-select-none');
   const downloadBtn = panel.querySelector('#id-download');
+  const clearStorageBtn = panel.querySelector('#id-clear-storage');
   const captureBtn = panel.querySelector('#id-capture');
   const prefixInput = panel.querySelector('#id-prefix');
   const statusText = panel.querySelector('.id-status');
   const downloadedCountText = panel.querySelector('#id-downloaded-count');
 
-  await loadDownloadedUrls(downloadedCountText);
+  await loadDownloadHistory(downloadedCountText);
 
   // 初始化图片选择器
   const imageSelector = new ImageSelector({
@@ -190,6 +205,23 @@ const DOWNLOADED_URLS_KEY =
     imageSelector.selectNone();
   });
 
+  clearStorageBtn.addEventListener('click', async () => {
+    const confirmed = window.confirm('确认清除当前脚本的存储记录吗？');
+    if (!confirmed) return;
+
+    downloadHistory.length = 0;
+
+    try {
+      await setItem(DOWNLOADED_HISTORY_KEY, []);
+      updateDownloadedCount(downloadedCountText);
+      statusText.textContent = '存储已清除';
+      logger.info('图片脚本存储已清除');
+    } catch (error) {
+      statusText.textContent = '清除存储失败';
+      logger.error('清除图片脚本存储失败', error);
+    }
+  });
+
   // 下载
   downloadBtn.addEventListener('click', () => {
     if (selectedImages.length === 0) {
@@ -213,24 +245,26 @@ const DOWNLOADED_URLS_KEY =
       onComplete: async (success, failed, successUrls = []) => {
         statusText.textContent = `完成: 成功 ${success}, 失败 ${failed}`;
 
-        let addedCount = 0;
-        successUrls.forEach((url) => {
-          if (typeof url === 'string' && url && !downloadedUrls.has(url)) {
-            downloadedUrls.add(url);
-            addedCount++;
-          }
-        });
+        if (successUrls.length > 0) {
+          const now = new Date().toISOString();
+          successUrls.forEach((url) => {
+            if (typeof url === 'string' && url) {
+              downloadHistory.push({
+                url,
+                downloadedAt: now,
+              });
+            }
+          });
 
-        if (addedCount > 0) {
           updateDownloadedCount(downloadedCountText);
-          await saveDownloadedUrls();
+          await saveDownloadHistory();
         }
 
         logger.info('下载流程完成', {
           success,
           failed,
-          newlyAdded: addedCount,
-          downloadedTotal: downloadedUrls.size,
+          historyAdded: successUrls.length,
+          historyTotal: downloadHistory.length,
         });
       },
     });
@@ -257,7 +291,7 @@ const DOWNLOADED_URLS_KEY =
 
   updateDownloadButton();
   logger.info('imageDownloader 初始化完成', {
-    downloadedCount: downloadedUrls.size,
+    downloadedCount: downloadHistory.length,
   });
   }
 

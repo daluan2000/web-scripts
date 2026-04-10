@@ -3,7 +3,15 @@ import { resolve } from 'path';
 import { readFileSync } from 'fs';
 
 // 脚本入口列表
-const scripts = ['imageDownloader'];
+const allScripts = ['imageDownloader', 'videoDownloader'];
+const selectedScript = process.env.USERSCRIPT_NAME;
+const scripts = selectedScript ? [selectedScript] : ['imageDownloader'];
+
+if (selectedScript && !allScripts.includes(selectedScript)) {
+  throw new Error(
+    `未知脚本入口: ${selectedScript}。可选值: ${allScripts.join(', ')}`
+  );
+}
 
 // 生成多入口配置
 const input = {};
@@ -31,6 +39,8 @@ export default defineConfig({
     },
   },
   build: {
+    // 多次构建时，首轮清空，后续追加
+    emptyOutDir: process.env.EMPTY_OUT_DIR !== 'false',
     rollupOptions: {
       input,
       output: {

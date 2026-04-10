@@ -92,6 +92,28 @@ A: 请确认：
 
 ---
 
+## Video Downloader（视频批量下载脚本）
+
+批量捕获并下载页面内视频资源，交互方式与图片下载器保持一致。
+
+### 核心功能
+- 自动捕获页面中的视频资源（video/source、部分 data-*、视频直链）
+- 支持选择后批量下载
+- 支持 m3u8 下载并自动转为 mp4（解析分片后在浏览器端转封装）
+- 快捷键 `Ctrl+Shift+V` 快速捕获
+
+### 当前支持范围
+- 直接视频地址：`mp4`、`webm`、`mov`、`m4v`、`mkv`、`avi`、`flv`、`ts`
+- HLS：`m3u8`（下载后输出 `mp4`）
+
+### 当前限制
+- `blob:` 资源无法直接提取源地址
+- `dash/mpd` 与 DRM 受保护视频暂不支持
+- 部分站点可能受登录态、跨域策略影响
+- 首次 m3u8 转 mp4 会加载 FFmpeg 运行时，耗时和内存占用会明显高于直链下载
+
+---
+
 ## 📋 项目结构
 
 ## 目录结构
@@ -177,6 +199,12 @@ npm install
 npm run dev
 ```
 
+如需监听视频脚本：
+
+```bash
+npm run dev:video
+```
+
 ### 生产打包
 
 执行一次性打包：
@@ -185,7 +213,15 @@ npm run dev
 npm run build
 ```
 
-打包后的文件会输出到 `dist/imageDownloader.user.js`，可直接安装使用。
+该命令会按脚本逐个打包，确保每个 userscript 都是单文件产物。
+
+打包后的文件会输出到：
+- `dist/imageDownloader.user.js`
+- `dist/videoDownloader.user.js`
+
+两者都可直接安装使用。
+
+说明：不会依赖 `dist/assets` 共享 chunk。
 
 ## 添加新增强规则
 

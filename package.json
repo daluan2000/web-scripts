@@ -4,9 +4,12 @@
   "description": "多入口油猴脚本项目",
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
-    "build": "vite build",
-    "preview": "vite build"
+    "dev": "USERSCRIPT_NAME=imageDownloader vite build --watch",
+    "dev:video": "USERSCRIPT_NAME=videoDownloader vite build --watch",
+    "build:image": "USERSCRIPT_NAME=imageDownloader EMPTY_OUT_DIR=true vite build",
+    "build:video": "USERSCRIPT_NAME=videoDownloader EMPTY_OUT_DIR=false vite build",
+    "build": "npm run build:image && npm run build:video",
+    "preview": "npm run build"
   },
   "devDependencies": {
     "vite": "^5.4.21"

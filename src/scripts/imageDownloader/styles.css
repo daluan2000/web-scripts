@@ -9,8 +9,8 @@
   position: fixed;
   bottom: 30px;
   right: 30px;
-  width: 56px;
-  height: 56px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -44,8 +44,8 @@
 }
 
 #id-floating-btn svg {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 /* ===========================
@@ -186,6 +186,17 @@
 .id-btn-success:hover:not(:disabled) {
   background: #38a169;
   border-color: #38a169;
+}
+
+.id-btn-warning {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: white;
+}
+
+.id-btn-warning:hover:not(:disabled) {
+  background: #ea580c;
+  border-color: #ea580c;
 }
 
 .id-prefix-label {

@@ -20,7 +20,14 @@ export const config = {
   // imageDownloader 专用配置
   imageDownloader: {
     storageKeys: {
-      downloadedUrls: 'imageDownloader_downloaded_urls',
+      downloadHistory: 'imageDownloader_download_history',
+    },
+  },
+
+  // videoDownloader 专用配置
+  videoDownloader: {
+    storageKeys: {
+      downloadHistory: 'videoDownloader_download_history',
     },
   },
 };
