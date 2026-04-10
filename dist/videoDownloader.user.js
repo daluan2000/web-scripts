@@ -2,10 +2,12 @@
 // @name         Video Downloader
 // @namespace    http://tampermonkey.net/
 // @version      1.0.0
-// @description  视频批量下载器 - 捕获页面视频并支持批量下载
+// @description  视频批量下载器 - 前端采集关键信息，后端执行下载
 // @match        https://*/*
 // @match        http://*/*
 // @connect      *
+// @connect      127.0.0.1
+// @connect      localhost
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -13,7 +15,7 @@
 // @grant        unsafeWindow
 // ==/UserScript==
 
-function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of Object.entries(e))if(s==="className")o.className=i;else if(s==="dataset")for(const[a,c]of Object.entries(i))o.dataset[a]=c;else s.startsWith("on")?o.addEventListener(s.slice(2).toLowerCase(),i):o.setAttribute(s,i);return t?o.innerHTML=t:n&&(o.textContent=n),o}function te(r){const e=w("style",{type:"text/css"});return e.textContent=r,document.head.appendChild(e),e}const I={logLevel:"info",storagePrefix:"userscript_",videoDownloader:{storageKeys:{downloadHistory:"videoDownloader_download_history"}}};function J(r){return I.storagePrefix+r}const q={debug:0,info:1,warn:2,error:3};function M(r,e,...t){const n=q[I.logLevel];if(q[r]<n)return;const o=`[${r.toUpperCase()}]`,s=new Date().toLocaleTimeString();switch(r){case"debug":case"info":console.log(`${o} [${s}]`,e,...t);break;case"warn":console.warn(`${o} [${s}]`,e,...t);break;case"error":console.error(`${o} [${s}]`,e,...t);break}}const l={debug:(r,...e)=>M("debug",r,...e),info:(r,...e)=>M("info",r,...e),warn:(r,...e)=>M("warn",r,...e),error:(r,...e)=>M("error",r,...e)};async function V(r,e){return new Promise(t=>{const n=JSON.stringify(e);GM_setValue(J(r),n),t()})}async function ne(r,e=null){const t=await GM_getValue(J(r));if(t===void 0)return e;try{return JSON.parse(t)}catch{return t}}const re=`/* 视频批量下载器样式 */
+function H(r,e={},t="",s=""){const a=document.createElement(r);for(const[d,p]of Object.entries(e))if(d==="className")a.className=p;else if(d==="dataset")for(const[u,h]of Object.entries(p))a.dataset[u]=h;else d.startsWith("on")?a.addEventListener(d.slice(2).toLowerCase(),p):a.setAttribute(d,p);return t?a.innerHTML=t:s&&(a.textContent=s),a}function Xe(r){const e=H("style",{type:"text/css"});return e.textContent=r,document.head.appendChild(e),e}const _={logLevel:"info",storagePrefix:"userscript_",videoDownloader:{storageKeys:{downloadHistory:"videoDownloader_download_history"},backend:{baseUrl:"http://127.0.0.1:8787",wsUrl:"",requestTimeout:2e4,pollingInterval:2500}}};function Ke(r){return _.storagePrefix+r}const Te={debug:0,info:1,warn:2,error:3};function se(r,e,...t){const s=Te[_.logLevel];if(Te[r]<s)return;const a=`[${r.toUpperCase()}]`,d=new Date().toLocaleTimeString();switch(r){case"debug":case"info":console.log(`${a} [${d}]`,e,...t);break;case"warn":console.warn(`${a} [${d}]`,e,...t);break;case"error":console.error(`${a} [${d}]`,e,...t);break}}const g={debug:(r,...e)=>se("debug",r,...e),info:(r,...e)=>se("info",r,...e),warn:(r,...e)=>se("warn",r,...e),error:(r,...e)=>se("error",r,...e)};async function Ne(r,e){return new Promise(t=>{const s=JSON.stringify(e);GM_setValue(Ke(r),s),t()})}async function re(r,e={}){const{method:t="GET",headers:s={},body:a=null,dataType:d="json",responseType:p="",timeout:u=3e4}=e;return new Promise((h,b)=>{const y={method:t,url:r,headers:s,timeout:u,responseType:p,onload:f=>{if(f.status>=200&&f.status<300)try{let w;p==="blob"||p==="arraybuffer"?w=f.response:d==="text"?w=f.responseText:d==="json"?w=JSON.parse(f.responseText):w=f.responseText,h({data:w,status:f.status,headers:f.responseHeaders})}catch{h({data:f.responseText,status:f.status})}else{let w="";const m=String(f.responseText||"").trim();if(m)try{const D=JSON.parse(m);w=String((D==null?void 0:D.detail)||m)}catch{w=m}const $=w?`请求失败: ${f.status} - ${w}`:`请求失败: ${f.status}`;b(new Error($))}},onerror:()=>b(new Error("网络请求失败")),ontimeout:()=>b(new Error("请求超时"))};a&&(y.data=typeof a=="string"?a:JSON.stringify(a),!y.headers["Content-Type"]&&!y.headers["content-type"]&&(y.headers["Content-Type"]="application/json")),GM_xmlhttpRequest(y)})}function ce(r){const e="http://127.0.0.1:8787",t=String(r||"").trim()||e;try{const s=new URL(t);return s.pathname="",s.search="",s.hash="",s.toString().replace(/\/$/,"")}catch{return e}}function Le(r,e=""){if(e&&String(e).trim())return String(e).trim().replace(/\/$/,"");const t=ce(r);return t.startsWith("https://")?t.replace("https://","wss://"):t.replace("http://","ws://")}class Ge{constructor(e={}){this.baseUrl=ce(e.baseUrl),this.wsUrl=Le(this.baseUrl,e.wsUrl),this.timeout=e.timeout||2e4}setBaseUrl(e,t=""){this.baseUrl=ce(e),this.wsUrl=Le(this.baseUrl,t)}getBaseUrl(){return this.baseUrl}getWsUrl(){return this.wsUrl}async createTask(e){return(await re(this.buildUrl("/api/video/tasks"),{method:"POST",body:e,timeout:this.timeout,dataType:"json"})).data}async getTask(e){return(await re(this.buildUrl(`/api/video/tasks/${encodeURIComponent(e)}`),{method:"GET",timeout:this.timeout,dataType:"json"})).data}async listTasks(){var t;return((t=(await re(this.buildUrl("/api/video/tasks"),{method:"GET",timeout:this.timeout,dataType:"json"})).data)==null?void 0:t.tasks)||[]}async cancelTask(e){return(await re(this.buildUrl(`/api/video/tasks/${encodeURIComponent(e)}/cancel`),{method:"POST",timeout:this.timeout,dataType:"json"})).data}async openDirectory({taskId:e="",path:t=""}={}){return(await re(this.buildUrl("/api/video/tasks/open-dir"),{method:"POST",body:{taskId:e,path:t},timeout:this.timeout,dataType:"json"})).data}connectTaskStream({taskId:e="",onOpen:t,onMessage:s,onClose:a,onError:d}){const u=`${this.getWsUrl()}/api/video/tasks/ws`,h=e?`?taskId=${encodeURIComponent(e)}`:"",b=`${u}${h}`;g.info("连接后端任务 WebSocket",{wsUrl:b});const y=new WebSocket(b);return y.onopen=()=>{t==null||t()},y.onmessage=f=>{try{const w=JSON.parse(f.data);s==null||s(w)}catch(w){g.warn("WebSocket 消息解析失败",w)}},y.onerror=f=>{d==null||d(f)},y.onclose=f=>{a==null||a(f)},{close(){try{y.close()}catch(f){g.warn("关闭 WebSocket 失败",f)}}}}buildUrl(e){return`${this.baseUrl}${e}`}}const Je=`/* 视频批量下载器样式 */
 
 #vd-floating-btn {
   position: fixed;
@@ -63,10 +65,10 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 620px;
-  height: 460px;
-  min-width: 320px;
-  min-height: 220px;
+  width: 600px;
+  height: 450px;
+  min-width: 300px;
+  min-height: 200px;
   background: #fefefe;
   border-radius: 14px;
   box-shadow: 0 18px 48px rgba(3, 38, 55, 0.22);
@@ -120,6 +122,34 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   border-bottom: 1px solid #fed7aa;
 }
 
+.vd-backend-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #d8e4eb;
+  background: #eef6fb;
+}
+
+.vd-backend-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.vd-backend-status.connected {
+  color: #047857;
+}
+
+.vd-backend-status.disconnected {
+  color: #b45309;
+}
+
+.vd-backend-status.polling {
+  color: #0369a1;
+}
+
 .vd-toolbar {
   display: flex;
   align-items: center;
@@ -128,10 +158,6 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   background: #f4f8fa;
   border-bottom: 1px solid #d6e3ea;
   flex-wrap: wrap;
-}
-
-.vd-toolbar-spacer {
-  flex: 1;
 }
 
 .vd-btn {
@@ -187,6 +213,16 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   background: #ea580c;
 }
 
+.vd-btn-ghost {
+  background: #ffffff;
+  color: #0f766e;
+  border-color: #99b9c6;
+}
+
+.vd-btn-ghost:hover:not(:disabled) {
+  background: #eff8f9;
+}
+
 .vd-prefix-label {
   display: flex;
   align-items: center;
@@ -204,6 +240,10 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   font-size: 13px;
 }
 
+.vd-input-wide {
+  width: 180px;
+}
+
 .vd-input:focus {
   border-color: #0ea5a4;
   box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.18);
@@ -211,6 +251,7 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
 
 .vd-video-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px;
@@ -219,6 +260,166 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   gap: 10px;
   align-content: start;
   background: linear-gradient(180deg, #f7fafc 0%, #f1f5f9 100%);
+}
+
+.vd-task-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 96px;
+  max-height: 45%;
+  min-width: 0;
+  flex-shrink: 0;
+  border-top: 1px solid #d6e3ea;
+  background: #f8fbfd;
+}
+
+.vd-task-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  border-bottom: 1px solid #d6e3ea;
+}
+
+.vd-task-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vd-task-empty {
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+  padding: 12px;
+}
+
+.vd-task-item {
+  border: 1px solid #d7e2ea;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.vd-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vd-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.vd-task-id {
+  font-size: 11px;
+  color: #475569;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vd-task-status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.vd-task-status.queued {
+  color: #0f172a;
+  background: #e2e8f0;
+}
+
+.vd-task-status.running {
+  color: #075985;
+  background: #dbeafe;
+}
+
+.vd-task-status.success {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.vd-task-status.failed {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.vd-task-status.cancelled {
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
+.vd-task-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.vd-task-progress-bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #0ea5a4, #f59e0b);
+  transition: width 0.2s ease;
+}
+
+.vd-task-meta {
+  font-size: 11px;
+  color: #64748b;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.vd-task-message {
+  font-size: 11px;
+  color: #334155;
+  word-break: break-word;
+}
+
+.vd-task-cancel {
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  color: #9a3412;
+  background: #fff7ed;
+  cursor: pointer;
+}
+
+.vd-task-cancel:hover {
+  background: #ffedd5;
+}
+
+.vd-task-open {
+  border: 1px solid #99b9c6;
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  color: #0f766e;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.vd-task-open:hover {
+  background: #eff8f9;
 }
 
 .vd-empty {
@@ -240,9 +441,24 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.vd-video-item.unselectable {
+  cursor: not-allowed;
+  opacity: 0.72;
+  filter: saturate(0.7);
+}
+
 .vd-video-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 18px rgba(14, 116, 144, 0.2);
+}
+
+.vd-video-item.unselectable:hover {
+  transform: none;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+}
+
+.vd-video-item.unselectable .vd-checkbox {
+  display: none;
 }
 
 .vd-video-item.selected {
@@ -337,6 +553,20 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   word-break: break-all;
 }
 
+.vd-filename-input {
+  width: 100%;
+  border: 1px solid #c8d5dd;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: #1e293b;
+}
+
+.vd-filename-input:focus {
+  border-color: #0ea5a4;
+  box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.16);
+}
+
 .vd-meta {
   font-size: 11px;
   color: #64748b;
@@ -365,10 +595,9 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 10px 24px 10px 16px;
   background: #eff6f9;
   border-top: 1px solid #d6e3ea;
-  position: relative;
 }
 
 .vd-status {
@@ -390,6 +619,7 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
   width: 16px;
   height: 16px;
   cursor: se-resize;
+  z-index: 5;
   background: linear-gradient(
     135deg,
     transparent 50%,
@@ -424,7 +654,7 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
 @media (max-width: 680px) {
   .vd-panel {
     width: 95%;
-    height: 82%;
+    height: 90%;
   }
 
   .vd-toolbar {
@@ -441,6 +671,14 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: 8px;
     padding: 8px;
+  }
+
+  .vd-input-wide {
+    width: 100%;
+  }
+
+  .vd-task-panel {
+    max-height: 42%;
   }
 }
 
@@ -466,34 +704,41 @@ function w(r,e={},t="",n=""){const o=document.createElement(r);for(const[s,i]of 
     width: auto;
   }
 }
-`;function K(r){const{target:e,handle:t=e,onClick:n,shouldStart:o,dragThreshold:s=4,clampToViewport:i=!0,dragClassName:a,bodyCursor:c="",removeTransformOnStart:h=!1,onDragStart:m,onDrag:d,onDragEnd:f}=r||{};if(!e||!t)return()=>{};let g=null,x=0,S=0,T=0,C=0,$=!1,N=!1;const U=u=>{if(n){if(N){u.preventDefault(),u.stopPropagation(),N=!1;return}n(u)}},E=u=>{if(u.pointerType==="mouse"&&u.button!==0||typeof o=="function"&&!o(u))return;const L=e.getBoundingClientRect();x=u.clientX,S=u.clientY,T=L.left,C=L.top,$=!1,g=u.pointerId,e.style.left=`${T}px`,e.style.top=`${C}px`,e.style.right="auto",e.style.bottom="auto",h&&(e.style.transform="none"),a&&e.classList.add(a),t.setPointerCapture(g),document.body.style.userSelect="none",c&&(document.body.style.cursor=c),typeof m=="function"&&m(u),u.preventDefault()},A=u=>{if(u.pointerId!==g)return;const L=u.clientX-x,p=u.clientY-S;if(!$&&Math.hypot(L,p)>=s&&($=!0,N=!0),!$)return;let y=T+L,F=C+p;if(i){const b=Math.max(0,window.innerWidth-e.offsetWidth),v=Math.max(0,window.innerHeight-e.offsetHeight);y=Math.max(0,Math.min(y,b)),F=Math.max(0,Math.min(F,v))}e.style.left=`${y}px`,e.style.top=`${F}px`,typeof d=="function"&&d(u)},k=u=>{u.pointerId===g&&(t.hasPointerCapture(g)&&t.releasePointerCapture(g),g=null,a&&e.classList.remove(a),document.body.style.userSelect="",c&&(document.body.style.cursor=""),typeof f=="function"&&f(u))};return t.addEventListener("click",U),t.addEventListener("pointerdown",E),t.addEventListener("pointermove",A),t.addEventListener("pointerup",k),t.addEventListener("pointercancel",k),()=>{t.removeEventListener("click",U),t.removeEventListener("pointerdown",E),t.removeEventListener("pointermove",A),t.removeEventListener("pointerup",k),t.removeEventListener("pointercancel",k)}}const oe=30,se=92;function G(r){if(!r)return;const e=r.getBoundingClientRect(),t=Math.max(1,window.innerWidth-e.width),n=Math.max(1,window.innerHeight-e.height);r.dataset.ratioX=String(Math.min(1,Math.max(0,e.left/t))),r.dataset.ratioY=String(Math.min(1,Math.max(0,e.top/n)))}function ie(r){if(!r)return;const e=Number(r.dataset.ratioX),t=Number(r.dataset.ratioY);if(!Number.isFinite(e)||!Number.isFinite(t))return;const n=Math.max(0,window.innerWidth-r.offsetWidth),o=Math.max(0,window.innerHeight-r.offsetHeight);r.style.left=`${Math.round(n*e)}px`,r.style.top=`${Math.round(o*t)}px`,r.style.right="auto",r.style.bottom="auto"}function ae(r){const e=w("div",{id:"vd-floating-btn",title:"视频批量下载器"},`
+`;function ze(r){const{target:e,handle:t=e,onClick:s,shouldStart:a,dragThreshold:d=4,clampToViewport:p=!0,dragClassName:u,bodyCursor:h="",removeTransformOnStart:b=!1,onDragStart:y,onDrag:f,onDragEnd:w}=r||{};if(!e||!t)return()=>{};let m=null,$=0,D=0,T=0,O=0,F=!1,j=!1;const Y=S=>{if(s){if(j){S.preventDefault(),S.stopPropagation(),j=!1;return}s(S)}},Q=S=>{if(S.pointerType==="mouse"&&S.button!==0||typeof a=="function"&&!a(S))return;const V=e.getBoundingClientRect();$=S.clientX,D=S.clientY,T=V.left,O=V.top,F=!1,m=S.pointerId,e.style.left=`${T}px`,e.style.top=`${O}px`,e.style.right="auto",e.style.bottom="auto",b&&(e.style.transform="none"),u&&e.classList.add(u),t.setPointerCapture(m),document.body.style.userSelect="none",h&&(document.body.style.cursor=h),typeof y=="function"&&y(S),S.preventDefault()},P=S=>{if(S.pointerId!==m)return;const V=S.clientX-$,Z=S.clientY-D;if(!F&&Math.hypot(V,Z)>=d&&(F=!0,j=!0),!F)return;let G=T+V,ee=O+Z;if(p){const oe=Math.max(0,window.innerWidth-e.offsetWidth),ae=Math.max(0,window.innerHeight-e.offsetHeight);G=Math.max(0,Math.min(G,oe)),ee=Math.max(0,Math.min(ee,ae))}e.style.left=`${G}px`,e.style.top=`${ee}px`,typeof f=="function"&&f(S)},W=S=>{S.pointerId===m&&(t.hasPointerCapture(m)&&t.releasePointerCapture(m),m=null,u&&e.classList.remove(u),document.body.style.userSelect="",h&&(document.body.style.cursor=""),typeof w=="function"&&w(S))};return t.addEventListener("click",Y),t.addEventListener("pointerdown",Q),t.addEventListener("pointermove",P),t.addEventListener("pointerup",W),t.addEventListener("pointercancel",W),()=>{t.removeEventListener("click",Y),t.removeEventListener("pointerdown",Q),t.removeEventListener("pointermove",P),t.removeEventListener("pointerup",W),t.removeEventListener("pointercancel",W)}}const Qe=30,Ze=92;function $e(r){if(!r)return;const e=r.getBoundingClientRect(),t=Math.max(1,window.innerWidth-e.width),s=Math.max(1,window.innerHeight-e.height);r.dataset.ratioX=String(Math.min(1,Math.max(0,e.left/t))),r.dataset.ratioY=String(Math.min(1,Math.max(0,e.top/s)))}function et(r){if(!r)return;const e=Number(r.dataset.ratioX),t=Number(r.dataset.ratioY);if(!Number.isFinite(e)||!Number.isFinite(t))return;const s=Math.max(0,window.innerWidth-r.offsetWidth),a=Math.max(0,window.innerHeight-r.offsetHeight);r.style.left=`${Math.round(s*e)}px`,r.style.top=`${Math.round(a*t)}px`,r.style.right="auto",r.style.bottom="auto"}function tt(r){const e=H("div",{id:"vd-floating-btn",title:"视频批量下载器"},`
     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
       <path d="M6 4.5v15l12-7.5z"/>
     </svg>
-  `);document.body.appendChild(e),e.style.right=`${oe}px`,e.style.bottom=`${se}px`,K({target:e,onClick:()=>r.onToggle(),dragClassName:"dragging",onDragEnd:()=>{G(e)}}),requestAnimationFrame(()=>{G(e)}),window.addEventListener("resize",()=>{ie(e)})}function Z(){const r=document.getElementById("vd-panel");r&&(r.style.display="flex",r.style.opacity="1");const e=document.getElementById("vd-floating-btn");e&&e.classList.add("active")}function O(){const r=document.getElementById("vd-panel");r&&(r.style.display="none");const e=document.getElementById("vd-floating-btn");e&&e.classList.remove("active")}function de(){const r=document.getElementById("vd-panel");r&&(r.style.display==="none"||r.style.display===""?Z():O())}const _=[{name:"default",displayName:"通用视频源",priority:0,urlPattern:/.*/i,pagePattern:/.*/i,enhance(r){return r}}];function ce(r){const e=window.location.href;for(const t of _)if(t.pagePattern.test(e))return t;return null}function le(r){const e=ce();return e?e.name:null}function ue(r){const e=_.find(t=>t.name===r);return(e==null?void 0:e.displayName)||(e==null?void 0:e.name)||r}function fe(r){if(!r)return r;for(const e of _)if(e.urlPattern.test(r))return e.enhance(r);return r}class X{constructor(){this.videoExtensions=["mp4","webm","m4v","mov","mkv","avi","flv","ts","m3u8","mpd"]}getAllVideos(){const e=[],t=new Set;return this.captureFromVideoElements(e,t),this.captureFromLinks(e,t),this.captureFromDataAttrs(e,t),e.filter(n=>this.isLikelyVideoUrl(n.src))}captureFromVideoElements(e,t){document.querySelectorAll("video").forEach(o=>{const s=[];o.currentSrc&&s.push(o.currentSrc),o.src&&s.push(o.src),o.querySelectorAll("source").forEach(a=>{a.src&&s.push(a.src),a.getAttribute("src")&&s.push(a.getAttribute("src"))}),this.captureFromCandidates(s,{poster:o.poster||"",duration:Number.isFinite(o.duration)?Math.round(o.duration):0,width:o.videoWidth||o.clientWidth||0,height:o.videoHeight||o.clientHeight||0,title:o.getAttribute("title")||document.title||""},e,t)})}captureFromLinks(e,t){document.querySelectorAll("a[href]").forEach(o=>{var i;const s=o.getAttribute("href");this.captureFromCandidates([s],{poster:"",duration:0,width:0,height:0,title:((i=o.textContent)==null?void 0:i.trim())||o.getAttribute("title")||document.title||""},e,t)})}captureFromDataAttrs(e,t){const n=["[data-video-url]","[data-video]","[data-src]","[data-play-url]","[data-playurl]","[data-m3u8]","[data-stream-url]"];document.querySelectorAll(n.join(",")).forEach(s=>{const i=[s.getAttribute("data-video-url"),s.getAttribute("data-video"),s.getAttribute("data-src"),s.getAttribute("data-play-url"),s.getAttribute("data-playurl"),s.getAttribute("data-m3u8"),s.getAttribute("data-stream-url")];this.captureFromCandidates(i,{poster:s.getAttribute("poster")||"",duration:0,width:0,height:0,title:s.getAttribute("title")||document.title||""},e,t)})}captureFromCandidates(e,t,n,o){e.map(s=>this.normalizeUrl(s)).filter(Boolean).forEach(s=>{if(o.has(s))return;o.add(s);const i=fe(s),a=this.detectMediaType(i),c=a!=="blob"&&a!=="dash";n.push({src:i,type:a,mimeType:this.guessMimeType(i),duration:t.duration||0,width:t.width||0,height:t.height||0,poster:t.poster||"",title:t.title||"",supported:c,unsupportedReason:c?"":this.getUnsupportedReason(a)})})}normalizeUrl(e){if(!e||typeof e!="string")return null;const t=e.trim();if(!t||t.startsWith("data:"))return null;if(t.startsWith("blob:"))return t;if(t.startsWith("//"))return`${window.location.protocol}${t}`;try{return new URL(t,window.location.href).href.split("#")[0]}catch{return null}}isLikelyVideoUrl(e){if(!e)return!1;const t=e.toLowerCase();if(t.startsWith("blob:"))return!0;const n=this.extractExtension(t);return!!(n&&this.videoExtensions.includes(n)||t.includes(".m3u8")||t.includes(".mpd")||t.includes("video")||t.includes("stream")||t.includes("playurl"))}detectMediaType(e){const t=(e||"").toLowerCase();if(t.startsWith("blob:"))return"blob";if(t.includes(".m3u8"))return"m3u8";if(t.includes(".mpd"))return"dash";const n=this.extractExtension(t);return n?n==="m3u8"?"m3u8":n==="mpd"?"dash":n:"video"}extractExtension(e){const n=(e||"").split("?")[0].split(".");if(n.length<2)return"";const o=n[n.length-1].trim();return o.length>6?"":o}guessMimeType(e){const t=this.extractExtension((e||"").toLowerCase());return{mp4:"video/mp4",webm:"video/webm",mov:"video/quicktime",m4v:"video/x-m4v",m3u8:"application/vnd.apple.mpegurl",ts:"video/mp2t",mkv:"video/x-matroska",avi:"video/x-msvideo",flv:"video/x-flv",mpd:"application/dash+xml"}[t]||"video/mp4"}getUnsupportedReason(e){return e==="blob"?"blob 资源无法直接提取源地址":e==="dash"?"dash/mpd 暂不支持":"当前资源暂不支持"}}class pe{constructor(e){this.grid=e.grid,this.onSelectionChange=e.onSelectionChange||(()=>{}),this.emptyText=e.emptyText||"未找到资源",this.classNames={item:"rs-item",selected:"selected",empty:"rs-empty",thumb:"rs-thumb",checkbox:"rs-checkbox",info:"rs-info",...e.classNames},this.createThumbnail=e.createThumbnail||this.defaultCreateThumbnail.bind(this),this.createInfo=e.createInfo||this.defaultCreateInfo.bind(this),this.selected=new Set,this.resources=[]}render(e){if(this.resources=e,this.selected.clear(),this.grid.innerHTML="",!Array.isArray(e)||e.length===0){this.grid.innerHTML=`<div class="${this.classNames.empty}">${this.emptyText}</div>`,this.onSelectionChange([]);return}e.forEach((t,n)=>{const o=this.createResourceItem(t,n);this.grid.appendChild(o)}),this.onSelectionChange([])}toggle(e){const t=this.grid.querySelector(`[data-index="${e}"]`);t&&(this.selected.has(e)?(this.selected.delete(e),t.classList.remove(this.classNames.selected)):(this.selected.add(e),t.classList.add(this.classNames.selected)),this.onSelectionChange(this.getSelectedResources()))}selectAll(){this.selected.clear(),this.resources.forEach((e,t)=>this.selected.add(t)),this.updateUI(),this.onSelectionChange(this.getSelectedResources())}selectNone(){this.selected.clear(),this.updateUI(),this.onSelectionChange([])}getSelectedResources(){return Array.from(this.selected).filter(e=>e>=0&&e<this.resources.length).map(e=>this.resources[e])}createResourceItem(e,t){const n=w("div",{className:this.classNames.item,dataset:{index:t}}),o={toggle:()=>this.toggle(t),createElement:w,updateResource:c=>{!c||typeof c!="object"||(this.resources[t]={...this.resources[t],...c})}},s=this.createThumbnail(e,t,o);s&&n.appendChild(s);const i=w("div",{className:this.classNames.checkbox,onClick:c=>{c.stopPropagation(),this.toggle(t)}},'<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="white" stroke-width="2"/></svg>'),a=this.createInfo(e,t,o);return n.appendChild(i),a&&n.appendChild(a),n}defaultCreateThumbnail(e,t,n){const o=w("div",{className:this.classNames.thumb}),s=w("img",{src:(e==null?void 0:e.src)||"",alt:`资源 ${t+1}`,loading:"lazy"});return o.appendChild(s),o.addEventListener("click",()=>n.toggle()),o}defaultCreateInfo(e){const t=w("div",{className:this.classNames.info}),n=this.getFileName((e==null?void 0:e.src)||"");return t.appendChild(w("span",{},this.truncate(n,28))),t}updateUI(){this.grid.querySelectorAll(`.${this.classNames.item}`).forEach(t=>{const n=parseInt(t.dataset.index||"-1",10);this.selected.has(n)?t.classList.add(this.classNames.selected):t.classList.remove(this.classNames.selected)})}getFileName(e){var o;if(!e)return"未命名";const t=String(e).split("/"),n=((o=t[t.length-1])==null?void 0:o.split("?")[0])||"未命名";try{return decodeURIComponent(n)||"未命名"}catch{return n||"未命名"}}truncate(e,t){return!e||e.length<=t?e:e.slice(0,Math.max(0,t-3))+"..."}}function he(r){var n;if(!r)return"未命名";const e=String(r).split("/"),t=((n=e[e.length-1])==null?void 0:n.split("?")[0])||"未命名";try{return decodeURIComponent(t)||"未命名"}catch{return t||"未命名"}}function me(r,e){return!r||r.length<=e?r:r.substring(0,e-3)+"..."}function ge(r){const e=Number(r||0);if(!e||!Number.isFinite(e))return"--:--";const t=Math.floor(e/3600),n=Math.floor(e%3600/60),o=Math.floor(e%60);return t>0?`${String(t).padStart(2,"0")}:${String(n).padStart(2,"0")}:${String(o).padStart(2,"0")}`:`${String(n).padStart(2,"0")}:${String(o).padStart(2,"0")}`}function be(r){return r?r==="m3u8"?"HLS":r==="dash"?"DASH":r==="blob"?"BLOB":String(r).toUpperCase():"video"}class ve extends pe{constructor(e){super({...e,emptyText:"未找到视频资源",classNames:{item:"vd-video-item",selected:"selected",empty:"vd-empty",thumb:"vd-video-thumb",checkbox:"vd-checkbox",info:"vd-video-info"},createThumbnail:(t,n,o)=>{const s=o.createElement("div",{className:"vd-video-thumb"});if(t.poster){const a=o.createElement("img",{src:t.poster,alt:t.title||`视频 ${n+1}`,loading:"lazy",onerror:()=>{s.classList.add("vd-video-thumb-fallback")}});s.appendChild(a)}else if(t.type!=="m3u8"&&t.type!=="dash"&&t.type!=="blob"){const a=o.createElement("video",{src:t.src,preload:"metadata",muted:"muted",playsinline:"playsinline"});a.onloadedmetadata=()=>{const c=Number.isFinite(a.duration)?Math.round(a.duration):0;o.updateResource({duration:c,width:a.videoWidth||t.width||0,height:a.videoHeight||t.height||0})},a.onerror=()=>{s.classList.add("vd-video-thumb-fallback"),a.remove()},s.appendChild(a)}else s.classList.add("vd-video-thumb-fallback");const i=o.createElement("span",{className:"vd-play-badge"},"▶");return s.appendChild(i),s.addEventListener("click",()=>{o.toggle()}),s},createInfo:(t,n,o)=>{const s=o.createElement("div",{className:"vd-video-info"}),i=he(t.src),a=`${be(t.type)}  ·  ${ge(t.duration)}`;return s.appendChild(o.createElement("span",{className:"vd-filename",title:t.src},me(i,26))),s.appendChild(o.createElement("span",{className:"vd-meta"},a)),t.supported?t.type==="m3u8"&&s.appendChild(o.createElement("span",{className:"vd-badge vd-badge-hls"},"m3u8")):s.appendChild(o.createElement("span",{className:"vd-badge vd-badge-unsupported"},"暂不支持")),s}})}getSelectedVideos(){return this.getSelectedResources()}}async function R(r,e={}){const{method:t="GET",headers:n={},body:o=null,dataType:s="json",responseType:i="",timeout:a=3e4}=e;return new Promise((c,h)=>{const m={method:t,url:r,headers:n,timeout:a,responseType:i,onload:d=>{if(d.status>=200&&d.status<300)try{let f;i==="blob"||i==="arraybuffer"?f=d.response:s==="text"?f=d.responseText:s==="json"?f=JSON.parse(d.responseText):f=d.responseText,c({data:f,status:d.status,headers:d.responseHeaders})}catch{c({data:d.responseText,status:d.status})}else h(new Error(`请求失败: ${d.status}`))},onerror:()=>h(new Error("网络请求失败")),ontimeout:()=>h(new Error("请求超时"))};o&&(m.data=typeof o=="string"?o:JSON.stringify(o),!m.headers["Content-Type"]&&!m.headers["content-type"]&&(m.headers["Content-Type"]="application/json")),GM_xmlhttpRequest(m)})}const ye=[{name:"unpkg",ffmpeg:"https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js",classWorker:"https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js",coreJs:"https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js",coreWasm:"https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm"},{name:"jsdelivr",ffmpeg:"https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js",classWorker:"https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js",coreJs:"https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js",coreWasm:"https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm"}];let B=null;function we(){return globalThis.unsafeWindow||window}function xe(r){const e=r.FFmpegWASM||r.FFmpeg||window.FFmpegWASM||window.FFmpeg;return{FFmpegClass:(e==null?void 0:e.FFmpeg)||null}}function D(r){return ye.map(e=>e[r]).filter(Boolean)}function z(r){return r?Object.prototype.toString.call(r)==="[object ArrayBuffer]"?r:ArrayBuffer.isView(r)?r.buffer.slice(r.byteOffset,r.byteOffset+r.byteLength):r.buffer&&Object.prototype.toString.call(r.buffer)==="[object ArrayBuffer]"?r.buffer:null:null}function Ee(r){return!r||typeof r!="object"?!1:Object.prototype.toString.call(r)==="[object Blob]"?!0:typeof r.arrayBuffer=="function"&&typeof r.size=="number"}async function ke(r,e="runtime"){const t=Array.isArray(r)?r:[r],n=[];for(const o of t){try{const s=await R(o,{method:"GET",responseType:"arraybuffer",timeout:12e4}),i=z(s.data);if(i)return{arrayBuffer:i,sourceUrl:o,transport:"GM_xmlhttpRequest"};n.push(`[GM] ${o} -> 返回数据不是二进制`)}catch(s){n.push(`[GM] ${o} -> ${(s==null?void 0:s.message)||"未知错误"}`)}try{const s=await fetch(o);if(!s.ok)throw new Error(`HTTP ${s.status}`);return{arrayBuffer:await s.arrayBuffer(),sourceUrl:o,transport:"fetch"}}catch(s){n.push(`[fetch] ${o} -> ${(s==null?void 0:s.message)||"未知错误"}`)}}throw new Error(`运行时资源下载失败(${e}): ${n.join(" | ")}`)}async function W(r,e,t){const{arrayBuffer:n,sourceUrl:o,transport:s}=await ke(r,t);l.info("FFmpeg 运行时资源已加载",{label:t,sourceUrl:o,transport:s});const i=new Blob([n],{type:e});return URL.createObjectURL(i)}function Se(r){return new Promise((e,t)=>{const n=document.querySelector(`script[data-video-downloader-src="${r}"]`);if(n){if(n.dataset.loaded==="true"){e();return}n.addEventListener("load",()=>e(),{once:!0}),n.addEventListener("error",()=>t(new Error(`脚本加载失败: ${r}`)),{once:!0});return}const o=document.createElement("script");o.src=r,o.async=!0,o.dataset.videoDownloaderSrc=r,o.onload=()=>{o.dataset.loaded="true",e()},o.onerror=()=>{t(new Error(`脚本加载失败: ${r}`))},document.head.appendChild(o)})}async function Ce(){if(B)return B;B=(async()=>{const r=we(),e=D("ffmpeg"),t=D("classWorker"),n=D("coreJs"),o=D("coreWasm");let s=!1;for(const d of e)try{await Se(d),s=!0,l.info("FFmpeg 脚本加载成功",{sourceUrl:d});break}catch{l.warn(`FFmpeg 脚本加载失败，尝试下一个源: ${d}`)}if(!s)throw new Error(`FFmpeg 脚本加载失败: ${e.join(" | ")}`);const i=xe(r);if(!i.FFmpegClass)throw new Error("FFmpeg 运行时初始化失败：未找到 FFmpeg 导出对象");const a=new i.FFmpegClass,c=await W(t,"text/javascript","classWorker"),h=await W(n,"text/javascript","coreJs"),m=await W(o,"application/wasm","coreWasm");try{await a.load({classWorkerURL:c,coreURL:h,wasmURL:m,workerURL:c})}finally{URL.revokeObjectURL(c),URL.revokeObjectURL(h),URL.revokeObjectURL(m)}return l.info("FFmpeg 运行时加载完成"),{ffmpeg:a}})();try{return await B}catch(r){throw B=null,r}}class Le{constructor(e){this.prefix=e.prefix||"",this.onProgress=e.onProgress||(()=>{}),this.onComplete=e.onComplete||(()=>{}),this.onItemError=e.onItemError||(()=>{}),this.downloadQueue=[],this.isDownloading=!1,this.successCount=0,this.failedCount=0,this.successUrls=[]}download(e){if(this.isDownloading){l.warn("下载进行中，请稍候");return}this.downloadQueue=(e||[]).map((t,n)=>({...t,index:n,filename:this.generateFilename(t,n)})),this.successCount=0,this.failedCount=0,this.successUrls=[],this.isDownloading=!0,l.info("开始批量下载视频",{total:this.downloadQueue.length,prefix:this.prefix}),this.processQueue()}async processQueue(){if(this.downloadQueue.length===0){this.isDownloading=!1,l.info("视频下载完成",{success:this.successCount,failed:this.failedCount}),this.onComplete(this.successCount,this.failedCount,this.successUrls);return}const e=this.downloadQueue.shift(),t=this.successCount+this.failedCount+1,n=this.successCount+this.failedCount+this.downloadQueue.length+1;this.onProgress(t,n);try{await this.downloadItem(e),this.successCount+=1,this.successUrls.push(e.src)}catch(o){this.failedCount+=1,this.onItemError(e,o),l.error(`视频下载失败: ${e.src}`,o)}this.processQueue()}async downloadItem(e){if(!(e!=null&&e.src))throw new Error("无效的视频地址");if(!e.supported)throw new Error(e.unsupportedReason||"该资源暂不支持下载");if(e.type==="m3u8"){await this.downloadM3u8(e);return}if(e.type==="dash")throw new Error("dash/mpd 暂不支持");if(e.src.startsWith("blob:"))throw new Error("blob 资源无法直接提取源地址");const t=await this.fetchBlob(e.src);this.triggerBlobDownload(t,e.filename)}async downloadM3u8(e){const t=await this.resolveM3u8Playlist(e.src),n=this.parseSegments(t.content,t.url);if(n.length===0)throw new Error("未解析到 m3u8 分片");const o=[];for(let h=0;h<n.length;h++){const m=n[h],d=await this.fetchArrayBuffer(m);o.push(new Uint8Array(d))}const s=this.mergeUint8Arrays(o),i=new Blob([s],{type:"video/mp2t"});l.info("m3u8 分片合并完成，开始转 mp4",{segmentCount:n.length});const a=await this.transmuxTsToMp4(i),c=this.replaceExtension(e.filename,"mp4");this.triggerBlobDownload(a,c)}async transmuxTsToMp4(e){const t=await Ce(),{ffmpeg:n}=t,o="video_downloader_input.ts",s="video_downloader_output.mp4";await n.writeFile(o,new Uint8Array(await e.arrayBuffer()));try{await n.exec(["-i",o,"-c","copy","-bsf:a","aac_adtstoasc","-movflags","+faststart",s])}catch{l.warn("无损转封装失败，尝试音频转码后输出 mp4"),await n.exec(["-i",o,"-c:v","copy","-c:a","aac","-movflags","+faststart",s])}const i=await n.readFile(s),a=i instanceof Uint8Array?i:new Uint8Array(i);if(!a.length)throw new Error("m3u8 转 mp4 失败，未生成有效文件");return new Blob([a],{type:"video/mp4"})}async resolveM3u8Playlist(e,t=0){if(t>3)throw new Error("m3u8 变体层级过深，停止解析");const n=await this.fetchText(e),o=this.pickBestVariant(n,e);return o?this.resolveM3u8Playlist(o,t+1):{url:e,content:n}}pickBestVariant(e,t){const n=String(e||"").split(/\r?\n/),o=[];for(let s=0;s<n.length;s++){const i=n[s].trim();if(!i.startsWith("#EXT-X-STREAM-INF"))continue;const a=this.findNextUriLine(n,s+1);if(!a)continue;const c=i.match(/BANDWIDTH=(\d+)/i),h=c?Number(c[1]):0;o.push({url:this.resolveUrl(a,t),bandwidth:h})}return o.length===0?null:(o.sort((s,i)=>i.bandwidth-s.bandwidth),o[0].url)}parseSegments(e,t){const n=String(e||"").split(/\r?\n/),o=[];for(const s of n){const i=s.trim();!i||i.startsWith("#")||o.push(this.resolveUrl(i,t))}return o}findNextUriLine(e,t){for(let n=t;n<e.length;n++){const o=String(e[n]||"").trim();if(!(!o||o.startsWith("#")))return o}return""}resolveUrl(e,t){try{return new URL(e,t).href}catch{return e}}async fetchText(e){try{const t=await R(e,{method:"GET",dataType:"text",timeout:6e4});if(typeof t.data=="string")return t.data;throw new Error("返回数据不是文本")}catch{const n=await fetch(e);if(!n.ok)throw new Error(`请求 m3u8 失败: HTTP ${n.status}`);return n.text()}}async fetchBlob(e){try{const t=await R(e,{method:"GET",responseType:"blob",timeout:12e4});if(Ee(t.data))return t.data;const n=z(t.data);if(n)return new Blob([n]);throw new Error("返回数据不是 Blob")}catch{l.warn(`GM 请求获取视频失败，回退 fetch: ${e}`);const n=await fetch(e);if(!n.ok)throw new Error(`下载失败: HTTP ${n.status}`);return n.blob()}}async fetchArrayBuffer(e){try{const t=await R(e,{method:"GET",responseType:"arraybuffer",timeout:12e4}),n=z(t.data);if(n)return n;throw new Error("返回数据不是 ArrayBuffer")}catch{const n=await fetch(e);if(!n.ok)throw new Error(`分片下载失败: HTTP ${n.status}`);return n.arrayBuffer()}}mergeUint8Arrays(e){const t=e.reduce((s,i)=>s+i.length,0),n=new Uint8Array(t);let o=0;return e.forEach(s=>{n.set(s,o),o+=s.length}),n}triggerBlobDownload(e,t){const n=URL.createObjectURL(e);this.triggerDownload(n,t),setTimeout(()=>{URL.revokeObjectURL(n)},1e3)}triggerDownload(e,t){const n=document.createElement("a");n.href=e,n.download=t,n.style.display="none",document.body.appendChild(n),n.click(),document.body.removeChild(n)}generateFilename(e,t){const n=this.detectExtension(e),o=String(t+1).padStart(3,"0");return`${this.prefix?`${this.prefix}_`:""}${o}.${n}`}detectExtension(e){if((e==null?void 0:e.type)==="m3u8")return"mp4";if((e==null?void 0:e.type)==="dash")return"mpd";const t=this.getExtensionFromUrl((e==null?void 0:e.src)||"");return t||{"video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","video/x-msvideo":"avi","video/x-flv":"flv","video/mp2t":"ts","application/vnd.apple.mpegurl":"mp4"}[e==null?void 0:e.mimeType]||"mp4"}getExtensionFromUrl(e){const n=String(e||"").split("?")[0].split(".");if(n.length<2)return"";const o=n[n.length-1].toLowerCase();return["mp4","webm","mov","m4v","mkv","avi","flv","ts"].includes(o)?o:""}replaceExtension(e,t){const n=String(t||"").replace(/^\./,"")||"mp4",o=(e||"download").split("?")[0],s=o.lastIndexOf(".");return s<=0?`${o}.${n}`:`${o.slice(0,s)}.${n}`}}function Te(){const r=document.getElementById("vd-panel");if(r)return r;const e=w("div",{id:"vd-panel",className:"vd-panel"});return e.innerHTML=`
+  `);document.body.appendChild(e),e.style.right=`${Qe}px`,e.style.bottom=`${Ze}px`,ze({target:e,onClick:()=>r.onToggle(),dragClassName:"dragging",onDragEnd:()=>{$e(e)}}),requestAnimationFrame(()=>{$e(e)}),window.addEventListener("resize",()=>{et(e)})}function Be(){const r=document.getElementById("vd-panel");r&&(r.style.display="flex",r.style.opacity="1");const e=document.getElementById("vd-floating-btn");e&&e.classList.add("active")}function le(){const r=document.getElementById("vd-panel");r&&(r.style.display="none");const e=document.getElementById("vd-floating-btn");e&&e.classList.remove("active")}function nt(){const r=document.getElementById("vd-panel");r&&(r.style.display==="none"||r.style.display===""?Be():le())}const ue=[{name:"default",displayName:"通用视频源",priority:0,urlPattern:/.*/i,pagePattern:/.*/i,enhance(r){return r}}];function rt(r){const e=window.location.href;for(const t of ue)if(t.pagePattern.test(e))return t;return null}function at(r){const e=rt();return e?e.name:null}function st(r){const e=ue.find(t=>t.name===r);return(e==null?void 0:e.displayName)||(e==null?void 0:e.name)||r}function ot(r){if(!r)return r;for(const e of ue)if(e.urlPattern.test(r))return e.enhance(r);return r}class it{constructor(){this.videoExtensions=["mp4","webm","m4v","mov","mkv","avi","flv","m3u8","mpd"],this.dynamicScriptExtensions=["php","asp","aspx","jsp","cgi","do","action"],this.pageExtensions=["html","htm","shtml","xhtml"]}getAllVideos(){const e=[],t=new Set;return this.captureFromVideoElements(e,t),this.captureFromLinks(e,t),this.captureFromDataAttrs(e,t),e.filter(s=>this.isLikelyVideoUrl(s.src,s.captureSource))}captureFromVideoElements(e,t){document.querySelectorAll("video").forEach(a=>{const d=[];a.currentSrc&&d.push(a.currentSrc),a.src&&d.push(a.src),a.querySelectorAll("source").forEach(u=>{u.src&&d.push(u.src),u.getAttribute("src")&&d.push(u.getAttribute("src"))}),this.captureFromCandidates(d,{poster:a.poster||"",duration:Number.isFinite(a.duration)?Math.round(a.duration):0,width:a.videoWidth||a.clientWidth||0,height:a.videoHeight||a.clientHeight||0,title:a.getAttribute("title")||document.title||""},e,t,"video-element")})}captureFromLinks(e,t){document.querySelectorAll("a[href]").forEach(a=>{var p;const d=a.getAttribute("href");this.captureFromCandidates([d],{poster:"",duration:0,width:0,height:0,title:((p=a.textContent)==null?void 0:p.trim())||a.getAttribute("title")||document.title||""},e,t,"link")})}captureFromDataAttrs(e,t){const s=["[data-video-url]","[data-video]","[data-src]","[data-play-url]","[data-playurl]","[data-m3u8]","[data-stream-url]"];document.querySelectorAll(s.join(",")).forEach(d=>{const p=[d.getAttribute("data-video-url"),d.getAttribute("data-video"),d.getAttribute("data-src"),d.getAttribute("data-play-url"),d.getAttribute("data-playurl"),d.getAttribute("data-m3u8"),d.getAttribute("data-stream-url")];this.captureFromCandidates(p,{poster:d.getAttribute("poster")||"",duration:0,width:0,height:0,title:d.getAttribute("title")||document.title||""},e,t,"data-attr")})}captureFromCandidates(e,t,s,a,d="unknown"){e.map(p=>this.normalizeUrl(p)).filter(Boolean).forEach(p=>{if(a.has(p))return;a.add(p);const u=ot(p),h=this.detectMediaType(u);if(h==="ts"&&this.isLikelyHlsSegmentUrl(u))return;const b=h!=="blob"&&h!=="dash"&&h!=="dynamic";s.push({src:u,type:h,captureSource:d,mimeType:this.guessMimeType(u),duration:t.duration||0,width:t.width||0,height:t.height||0,poster:t.poster||"",title:t.title||"",supported:b,unsupportedReason:b?"":this.getUnsupportedReason(h)})})}normalizeUrl(e){if(!e||typeof e!="string")return null;const t=e.trim();if(!t||t.startsWith("data:"))return null;if(t.startsWith("blob:"))return t;if(t.startsWith("//"))return`${window.location.protocol}${t}`;try{return new URL(t,window.location.href).href.split("#")[0]}catch{return null}}getUrlMatchTarget(e){try{const t=new URL(e);return`${t.pathname||""}${t.search||""}`.toLowerCase()}catch{return String(e||"").toLowerCase()}}isLikelyVideoUrl(e,t="unknown"){if(!e)return!1;if(String(e).toLowerCase().startsWith("blob:"))return!0;const a=this.getUrlMatchTarget(e),d=this.extractExtension(a);if(d&&this.pageExtensions.includes(d))return!1;if(d&&this.videoExtensions.includes(d)||d&&this.dynamicScriptExtensions.includes(d)||a.includes(".m3u8")||a.includes(".mpd")||t==="video-element")return!0;const p=/(?:^|[/?#&=_-])(stream|playurl|m3u8|mpd)(?:[/?#&=_-]|$)/i;return t==="link"||t==="data-attr"||t==="unknown"?p.test(a):!1}detectMediaType(e){const t=(e||"").toLowerCase();if(t.startsWith("blob:"))return"blob";if(t.includes(".m3u8"))return"m3u8";if(t.includes(".mpd"))return"dash";const s=this.extractExtension(t);return s?this.dynamicScriptExtensions.includes(s)?"dynamic":s==="m3u8"?"m3u8":s==="mpd"?"dash":s:"video"}isLikelyHlsSegmentUrl(e){const t=(e||"").toLowerCase();return t.includes(".ts")?/\/(seg|segment|chunk|frag|media|part)[^/]*\d+[^/]*\.ts(\?|$)/i.test(t)||/[?&](seg|segment|chunk|frag|part|start|end)=/i.test(t)||/\/\d{1,6}\.ts(\?|$)/i.test(t):!1}extractExtension(e){const s=(e||"").split("?")[0].split(".");if(s.length<2)return"";const a=s[s.length-1].trim();return a.length>6?"":a}guessMimeType(e){const t=this.extractExtension((e||"").toLowerCase());return{mp4:"video/mp4",webm:"video/webm",mov:"video/quicktime",m4v:"video/x-m4v",m3u8:"application/vnd.apple.mpegurl",ts:"video/mp2t",mkv:"video/x-matroska",avi:"video/x-msvideo",flv:"video/x-flv",mpd:"application/dash+xml"}[t]||"video/mp4"}getUnsupportedReason(e){return e==="blob"?"blob 资源无法直接提取源地址":e==="dash"?"dash/mpd 暂不支持":e==="dynamic"?"动态脚本地址（如 .php）暂不支持自动下载":"当前资源暂不支持"}}class dt{constructor(e){this.grid=e.grid,this.onSelectionChange=e.onSelectionChange||(()=>{}),this.emptyText=e.emptyText||"未找到资源",this.classNames={item:"rs-item",selected:"selected",empty:"rs-empty",thumb:"rs-thumb",checkbox:"rs-checkbox",info:"rs-info",...e.classNames},this.createThumbnail=e.createThumbnail||this.defaultCreateThumbnail.bind(this),this.createInfo=e.createInfo||this.defaultCreateInfo.bind(this),this.isSelectable=e.isSelectable||(()=>!0),this.getDisabledReason=e.getDisabledReason||(()=>"当前资源不可选"),this.selected=new Set,this.resources=[]}render(e){if(this.resources=e,this.selected.clear(),this.grid.innerHTML="",!Array.isArray(e)||e.length===0){this.grid.innerHTML=`<div class="${this.classNames.empty}">${this.emptyText}</div>`,this.onSelectionChange([]);return}e.forEach((t,s)=>{const a=this.createResourceItem(t,s);this.grid.appendChild(a)}),this.onSelectionChange([])}toggle(e){const t=this.grid.querySelector(`[data-index="${e}"]`);if(!t)return;const s=this.resources[e];if(!this.isSelectable(s,e)){const a=this.getDisabledReason(s,e);t.title=a||"";return}this.selected.has(e)?(this.selected.delete(e),t.classList.remove(this.classNames.selected)):(this.selected.add(e),t.classList.add(this.classNames.selected)),this.onSelectionChange(this.getSelectedResources())}selectAll(){this.selected.clear(),this.resources.forEach((e,t)=>{this.isSelectable(e,t)&&this.selected.add(t)}),this.updateUI(),this.onSelectionChange(this.getSelectedResources())}selectNone(){this.selected.clear(),this.updateUI(),this.onSelectionChange([])}getSelectedResources(){return Array.from(this.selected).filter(e=>e>=0&&e<this.resources.length).filter(e=>this.isSelectable(this.resources[e],e)).map(e=>this.resources[e])}createResourceItem(e,t){const s=H("div",{className:this.classNames.item,dataset:{index:t}});this.isSelectable(e,t)||(s.classList.add("unselectable"),s.title=this.getDisabledReason(e,t)||"",s.setAttribute("aria-disabled","true"));const a={toggle:()=>this.toggle(t),createElement:H,updateResource:h=>{if(!(!h||typeof h!="object")){if(this.resources[t]&&typeof this.resources[t]=="object"){Object.assign(this.resources[t],h);return}this.resources[t]={...h}}}},d=this.createThumbnail(e,t,a);d&&s.appendChild(d);const p=H("div",{className:this.classNames.checkbox,onClick:h=>{h.stopPropagation(),this.toggle(t)}},'<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="white" stroke-width="2"/></svg>'),u=this.createInfo(e,t,a);return s.appendChild(p),u&&s.appendChild(u),s}defaultCreateThumbnail(e,t,s){const a=H("div",{className:this.classNames.thumb}),d=H("img",{src:(e==null?void 0:e.src)||"",alt:`资源 ${t+1}`,loading:"lazy"});return a.appendChild(d),a.addEventListener("click",()=>s.toggle()),a}defaultCreateInfo(e){const t=H("div",{className:this.classNames.info}),s=this.getFileName((e==null?void 0:e.src)||"");return t.appendChild(H("span",{},this.truncate(s,28))),t}updateUI(){this.grid.querySelectorAll(`.${this.classNames.item}`).forEach(t=>{const s=parseInt(t.dataset.index||"-1",10);this.selected.has(s)?t.classList.add(this.classNames.selected):t.classList.remove(this.classNames.selected)})}getFileName(e){var a;if(!e)return"未命名";const t=String(e).split("/"),s=((a=t[t.length-1])==null?void 0:a.split("?")[0])||"未命名";try{return decodeURIComponent(s)||"未命名"}catch{return s||"未命名"}}truncate(e,t){return!e||e.length<=t?e:e.slice(0,Math.max(0,t-3))+"..."}}function qe(r){var s;if(!r)return"未命名";const e=String(r).split("/"),t=((s=e[e.length-1])==null?void 0:s.split("?")[0])||"未命名";try{return decodeURIComponent(t)||"未命名"}catch{return t||"未命名"}}function ct(r){const e=String((r==null?void 0:r.fileName)||"").trim();return e||qe((r==null?void 0:r.src)||"").replace(/\.[0-9A-Za-z]{1,6}$/,"")}function lt(r,e){return!r||r.length<=e?r:r.substring(0,e-3)+"..."}function ut(r){const e=Number(r||0);if(!e||!Number.isFinite(e))return"--:--";const t=Math.floor(e/3600),s=Math.floor(e%3600/60),a=Math.floor(e%60);return t>0?`${String(t).padStart(2,"0")}:${String(s).padStart(2,"0")}:${String(a).padStart(2,"0")}`:`${String(s).padStart(2,"0")}:${String(a).padStart(2,"0")}`}function pt(r){return r?r==="m3u8"?"HLS":r==="dash"?"DASH":r==="blob"?"BLOB":String(r).toUpperCase():"video"}function Ae(r){return(r==null?void 0:r.supported)!==!1}function Ue(r){return`不可下载: ${String((r==null?void 0:r.unsupportedReason)||"").trim()||"当前资源暂不支持下载"}`}class ft extends dt{constructor(e){super({...e,emptyText:"未找到视频资源",classNames:{item:"vd-video-item",selected:"selected",empty:"vd-empty",thumb:"vd-video-thumb",checkbox:"vd-checkbox",info:"vd-video-info"},isSelectable:t=>Ae(t),getDisabledReason:t=>Ue(t),createThumbnail:(t,s,a)=>{const d=a.createElement("div",{className:"vd-video-thumb"});if(t.poster){const u=a.createElement("img",{src:t.poster,alt:t.title||`视频 ${s+1}`,loading:"lazy",onerror:()=>{d.classList.add("vd-video-thumb-fallback")}});d.appendChild(u)}else if(t.type!=="m3u8"&&t.type!=="dash"&&t.type!=="blob"){const u=a.createElement("video",{src:t.src,preload:"metadata",muted:"muted",playsinline:"playsinline"});u.onloadedmetadata=()=>{const h=Number.isFinite(u.duration)?Math.round(u.duration):0;a.updateResource({duration:h,width:u.videoWidth||t.width||0,height:u.videoHeight||t.height||0})},u.onerror=()=>{d.classList.add("vd-video-thumb-fallback"),u.remove()},d.appendChild(u)}else d.classList.add("vd-video-thumb-fallback");const p=a.createElement("span",{className:"vd-play-badge"},"▶");return d.appendChild(p),d.addEventListener("click",()=>{a.toggle()}),d},createInfo:(t,s,a)=>{const d=a.createElement("div",{className:"vd-video-info"}),p=qe(t.src),u=ct(t),h=`${pt(t.type)}  ·  ${ut(t.duration)}`,b=a.createElement("input",{className:"vd-filename-input",type:"text",value:u,placeholder:"自定义文件名",title:"下载文件名（无需扩展名）"});Ae(t)||(b.disabled=!0,b.title=Ue(t));const y=()=>{const f=String(b.value||"").trim();a.updateResource({fileName:f||u})};return b.addEventListener("click",f=>{f.stopPropagation()}),b.addEventListener("input",y),b.addEventListener("change",y),d.appendChild(b),d.appendChild(a.createElement("span",{className:"vd-filename",title:t.src},lt(p,26))),d.appendChild(a.createElement("span",{className:"vd-meta"},h)),t.supported?t.type==="m3u8"&&d.appendChild(a.createElement("span",{className:"vd-badge vd-badge-hls"},"m3u8")):d.appendChild(a.createElement("span",{className:"vd-badge vd-badge-unsupported"},"暂不支持")),d}})}getSelectedVideos(){return this.getSelectedResources()}}function ht(r={}){const{target:e,handle:t=e,minWidth:s=300,minHeight:a=200,onResizeStart:d,onResize:p,onResizeEnd:u}=r;if(!e||!t)return()=>{};let h=!1,b=0,y=0,f=0,w=0;const m=T=>{T.preventDefault(),T.stopPropagation(),h=!0,b=T.clientX,y=T.clientY,f=e.offsetWidth,w=e.offsetHeight,document.body.style.userSelect="none",document.body.style.cursor="se-resize",d==null||d(T)},$=T=>{if(!h)return;const O=T.clientX-b,F=T.clientY-y,j=Math.max(s,f+O),Y=Math.max(a,w+F);e.style.width=`${j}px`,e.style.height=`${Y}px`,p==null||p(T,{width:j,height:Y})},D=T=>{h&&(h=!1,document.body.style.userSelect="",document.body.style.cursor="",u==null||u(T))};return t.addEventListener("mousedown",m),document.addEventListener("mousemove",$),document.addEventListener("mouseup",D),()=>{t.removeEventListener("mousedown",m),document.removeEventListener("mousemove",$),document.removeEventListener("mouseup",D)}}function mt(){const r=document.getElementById("vd-panel");if(r)return r;const e=H("div",{id:"vd-panel",className:"vd-panel"});return e.innerHTML=`
     <div class="vd-panel-header">
       <span class="vd-panel-title">🎬 视频批量下载器</span>
       <button class="vd-panel-close" id="vd-close-btn" title="关闭">×</button>
     </div>
-    <div class="vd-panel-note">支持直链视频与 m3u8 基础下载，blob / dash / drm 暂不支持</div>
+    <div class="vd-panel-note">前端仅采集视频关键信息，下载任务由本机后端执行</div>
+    <div class="vd-backend-strip">
+      <span class="vd-backend-status disconnected" id="vd-backend-status">后端: 未连接</span>
+      <button class="vd-btn vd-btn-ghost" id="vd-reconnect">重连后端</button>
+    </div>
     <div class="vd-toolbar">
       <button class="vd-btn vd-btn-primary" id="vd-capture" title="快捷键: Ctrl+Shift+V">
         <span>🎯</span> 捕获视频
       </button>
       <button class="vd-btn" id="vd-select-all">全选</button>
       <button class="vd-btn" id="vd-select-none">全不选</button>
-      <button class="vd-btn vd-btn-success" id="vd-download" disabled>下载选中</button>
+      <button class="vd-btn vd-btn-success" id="vd-download" disabled>提交任务</button>
       <button class="vd-btn vd-btn-warning" id="vd-clear-storage">清除存储</button>
-      <div class="vd-toolbar-spacer"></div>
-      <label class="vd-prefix-label">
-        文件前缀:
-        <input type="text" id="vd-prefix" class="vd-input" placeholder="如: video" />
-      </label>
     </div>
     <div class="vd-video-grid"></div>
+    <div class="vd-task-panel">
+      <div class="vd-task-header">
+        <span>后端任务进度</span>
+      </div>
+      <div class="vd-task-list" id="vd-task-list"></div>
+    </div>
     <div class="vd-panel-footer">
       <span class="vd-status">点击「捕获视频」开始</span>
       <span class="vd-downloaded-count" id="vd-downloaded-count">历史下载数: 0</span>
-      <div class="vd-resize-handle"></div>
     </div>
-  `,document.body.appendChild(e),$e(e),Ae(e),e.querySelector("#vd-close-btn").addEventListener("click",()=>{O()}),e}function $e(r){const e=r.querySelector(".vd-panel-header");K({target:r,handle:e,bodyCursor:"move",removeTransformOnStart:!0,shouldStart:t=>!t.target.closest(".vd-panel-close")})}function Ae(r){const e=r.querySelector(".vd-resize-handle");let t=!1,n=0,o=0,s=0,i=0;e.addEventListener("mousedown",a=>{a.preventDefault(),a.stopPropagation(),t=!0,n=a.clientX,o=a.clientY,s=r.offsetWidth,i=r.offsetHeight,document.body.style.userSelect="none",document.body.style.cursor="se-resize"}),document.addEventListener("mousemove",a=>{if(!t)return;const c=a.clientX-n,h=a.clientY-o,m=Math.max(320,s+c),d=Math.max(220,i+h);r.style.width=`${m}px`,r.style.height=`${d}px`}),document.addEventListener("mouseup",()=>{t&&(t=!1,document.body.style.userSelect="",document.body.style.cursor="")})}te(re);const Fe="v";var Y,Q;const P=(Q=(Y=I.videoDownloader)==null?void 0:Y.storageKeys)==null?void 0:Q.downloadHistory;(function(){if(window.__videoDownloaderInitialized)return;window.__videoDownloaderInitialized=!0;let r=[],e=[];const t=[];let n=!0;function o(d){d&&(d.textContent=`历史下载数: ${t.length}`)}function s(d){return d&&typeof d=="object"&&typeof d.url=="string"&&d.url?{url:d.url,downloadedAt:typeof d.downloadedAt=="string"?d.downloadedAt:null}:null}async function i(d){try{const f=await ne(P,[]);Array.isArray(f)&&f.forEach(g=>{const x=s(g);x&&t.push(x)}),o(d),l.info("已加载视频下载历史",{count:t.length})}catch(f){l.error("读取视频下载历史失败",f),o(d)}}async function a(){try{await V(P,t),l.debug("视频下载历史已保存",{count:t.length})}catch(d){l.error("保存视频下载历史失败",d)}}function c(d,f){document.addEventListener("keydown",g=>{const x=String(g.key||"").toLowerCase();if(g.ctrlKey&&g.shiftKey&&x===Fe){if(g.preventDefault(),!n)return;n=!1;const S=document.getElementById("vd-panel");(!S||S.style.display==="none"||S.style.display==="")&&Z(),r=new X().getAllVideos(),d.render(r),f&&(f.textContent=`已捕获 ${r.length} 个视频资源`),setTimeout(()=>{n=!0},500)}})}async function h(){l.info("videoDownloader 初始化开始",{logLevel:I.logLevel});const d=Te(),f=le(),g=d.querySelector(".vd-panel-note");if(f&&g){const p=ue(f);g.textContent=`支持直链视频与 m3u8 基础下载，当前来源策略：${p}`}ae({onToggle:de}),O();const x=d.querySelector(".vd-video-grid"),S=d.querySelector("#vd-select-all"),T=d.querySelector("#vd-select-none"),C=d.querySelector("#vd-download"),$=d.querySelector("#vd-clear-storage"),N=d.querySelector("#vd-capture"),U=d.querySelector("#vd-prefix"),E=d.querySelector(".vd-status"),A=d.querySelector("#vd-downloaded-count");await i(A);const k=new ve({grid:x,onSelectionChange:p=>{e=p,u()}});c(k,E),N.addEventListener("click",()=>{l.info("开始手动捕获视频"),r=new X().getAllVideos(),k.render(r),E.textContent=`已捕获 ${r.length} 个视频资源`,l.info("手动捕获完成",{count:r.length})}),S.addEventListener("click",()=>{k.selectAll()}),T.addEventListener("click",()=>{k.selectNone()}),$.addEventListener("click",async()=>{if(window.confirm("确认清除当前脚本的存储记录吗？")){t.length=0;try{await V(P,[]),o(A),E.textContent="存储已清除",l.info("视频脚本存储已清除")}catch(y){E.textContent="清除存储失败",l.error("清除视频脚本存储失败",y)}}}),C.addEventListener("click",()=>{if(e.length===0){alert("请先选择要下载的视频");return}const p=[...e],y=U.value||L();l.info("开始下载选中视频",{count:p.length,prefix:y}),new Le({prefix:y,onProgress:(b,v)=>{E.textContent=`下载中: ${b}/${v}`},onItemError:(b,v)=>{l.warn("单个视频下载失败",{url:b==null?void 0:b.src,reason:(v==null?void 0:v.message)||"未知错误"})},onComplete:async(b,v,j=[])=>{if(E.textContent=`完成: 成功 ${b}, 失败 ${v}`,j.length>0){const ee=new Date().toISOString();j.forEach(H=>{typeof H=="string"&&H&&t.push({url:H,downloadedAt:ee})}),o(A),await a()}l.info("视频下载流程完成",{success:b,failed:v,historyAdded:j.length,historyTotal:t.length})}}).download(p)});function u(){const p=e.length;C.disabled=p===0,C.textContent=p===0?"下载选中":`下载选中 (${p})`}function L(){const p=new Date,y=String(p.getMonth()+1).padStart(2,"0"),F=String(p.getDate()).padStart(2,"0"),b=String(p.getHours()).padStart(2,"0"),v=String(p.getMinutes()).padStart(2,"0");return`${y}${F}${b}${v}`}u(),l.info("videoDownloader 初始化完成",{downloadedCount:t.length})}function m(){h().catch(d=>{l.error("videoDownloader 初始化失败",d)})}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",m):m()})();
+    <div class="vd-resize-handle"></div>
+  `,document.body.appendChild(e),gt(e),bt(e),e.querySelector("#vd-close-btn").addEventListener("click",()=>{le()}),e}function gt(r){const e=r.querySelector(".vd-panel-header");ze({target:r,handle:e,bodyCursor:"move",removeTransformOnStart:!0,shouldStart:t=>!t.target.closest(".vd-panel-close")})}function bt(r){const e=r.querySelector(".vd-resize-handle");e&&ht({target:r,handle:e,minWidth:300,minHeight:200})}Xe(Je);const vt="v";var Ie,Re;const ie=(Re=(Ie=_.videoDownloader)==null?void 0:Ie.storageKeys)==null?void 0:Re.downloadHistory,K=new Set(["success","failed","cancelled"]),de="videoDownloader.frameCapture.v1",Me="capture-request",De="capture-response",wt=1200;(function(){var we,ye,xe,ke,Se,Ee;if(window.__videoDownloaderInitialized)return;window.__videoDownloaderInitialized=!0;const r=window.top===window.self;let e=[],t=[];const s=[],a=new Map,d=new Set,p=new Map,u=new Set;let h=!0,b=null,y=!1;const f=new Ge({baseUrl:(ye=(we=_.videoDownloader)==null?void 0:we.backend)==null?void 0:ye.baseUrl,wsUrl:(ke=(xe=_.videoDownloader)==null?void 0:xe.backend)==null?void 0:ke.wsUrl,timeout:(Ee=(Se=_.videoDownloader)==null?void 0:Se.backend)==null?void 0:Ee.requestTimeout});function w(n){n&&(n.textContent=`历史下载数: ${s.length}`)}function m(n,o){n&&(n.textContent=o)}function $(n,o,i){n&&(n.classList.remove("connected","disconnected","polling"),n.classList.add(o),n.textContent=i)}function D(n){return n&&typeof n=="object"&&typeof n.url=="string"&&n.url?{url:n.url,downloadedAt:typeof n.downloadedAt=="string"?n.downloadedAt:null}:null}async function T(n){try{const o=await getItem(ie,[]);Array.isArray(o)&&o.forEach(i=>{const l=D(i);l&&s.push(l)}),w(n),g.info("已加载视频下载历史",{count:s.length})}catch(o){g.error("读取视频下载历史失败",o),w(n)}}async function O(){try{await Ne(ie,s),g.debug("视频下载历史已保存",{count:s.length})}catch(n){g.error("保存视频下载历史失败",n)}}function F(n){switch(n){case"queued":return"排队中";case"running":return"执行中";case"success":return"已完成";case"failed":return"有失败";case"cancelled":return"已取消";default:return n||"未知"}}function j(n){return[`进度 ${Math.round((Number(n.progress||0)||0)*100)}%`,`成功 ${n.success||0}`,`失败 ${n.failed||0}`,n.speed?`速度 ${n.speed}`:"",n.eta?`ETA ${n.eta}`:""].filter(Boolean)}function Y(n,o){if(!n||!K.has(n.status)||d.has(n.id))return;const i=(n.items||[]).filter(c=>c.status==="success");if(i.length===0){d.add(n.id);return}const l=new Date().toISOString();i.forEach(c=>{c.src&&s.push({url:c.src,downloadedAt:l})}),d.add(n.id),w(o),O()}function Q(n){if(!n)return;n.innerHTML="";const o=Array.from(a.values()).sort((i,l)=>{const c=Date.parse(i.updatedAt||i.createdAt||0)||0;return(Date.parse(l.updatedAt||l.createdAt||0)||0)-c});if(o.length===0){const i=document.createElement("div");i.className="vd-task-empty",i.textContent="暂无任务，选择视频后点击「提交任务」",n.appendChild(i);return}o.forEach(i=>{const l=document.createElement("div");l.className="vd-task-item";const c=document.createElement("div");c.className="vd-task-row";const x=document.createElement("span");x.className="vd-task-id",x.textContent=String(i.id||"-");const A=document.createElement("span");A.className=`vd-task-status ${i.status||"queued"}`,A.textContent=F(i.status),c.appendChild(x),c.appendChild(A),l.appendChild(c);const N=document.createElement("div");N.className="vd-task-progress";const I=document.createElement("div");I.className="vd-task-progress-bar",I.style.width=`${Math.round((Number(i.progress||0)||0)*100)}%`,N.appendChild(I),l.appendChild(N);const E=document.createElement("div");E.className="vd-task-meta",j(i).forEach(z=>{const te=document.createElement("span");te.textContent=z,E.appendChild(te)}),l.appendChild(E);const J=document.createElement("div");J.className="vd-task-message",J.textContent=i.message||"等待后端更新状态",l.appendChild(J);const U=document.createElement("div");U.className="vd-task-row";const C=document.createElement("span");C.className="vd-task-id",C.textContent=`目录: ${i.outputDir||"-"}`;const M=document.createElement("div");M.className="vd-task-actions";const R=document.createElement("button");if(R.className="vd-task-open",R.dataset.action="open-task-dir",R.dataset.taskId=i.id,R.textContent="打开目录",M.appendChild(R),!K.has(i.status)){const z=document.createElement("button");z.className="vd-task-cancel",z.dataset.action="cancel-task",z.dataset.taskId=i.id,z.textContent="取消任务",M.appendChild(z)}U.appendChild(C),U.appendChild(M),l.appendChild(U),n.appendChild(l)})}function P(n,o,i){!n||!n.id||(a.set(n.id,n),K.has(n.status)&&W(n.id),Y(n,i),Q(o))}function W(n){const o=p.get(n);o&&(clearInterval(o),p.delete(n))}function S(){p.forEach(n=>clearInterval(n)),p.clear()}function V(n,o,i,l,c){var N,I;if(!n||p.has(n))return;const x=(I=(N=_.videoDownloader)==null?void 0:N.backend)==null?void 0:I.pollingInterval,A=setInterval(async()=>{try{const E=await f.getTask(n);P(E,l,c),K.has(E.status)&&W(n)}catch(E){if(String((E==null?void 0:E.message)||"").includes("请求失败: 404")){W(n);const U=a.get(n);U&&!K.has(U.status)&&P({...U,status:"failed",message:"任务不存在，可能后端已重启或任务已清理",updatedAt:new Date().toISOString()},l,c),g.warn("任务不存在，停止轮询",{taskId:n});return}$(i,"polling","后端: 轮询中"),g.warn("轮询任务状态失败",{taskId:n,error:(E==null?void 0:E.message)||E}),m(o,`任务轮询失败: ${(E==null?void 0:E.message)||"未知错误"}`)}},x);p.set(n,A)}function Z(n,o,i,l){a.forEach(c=>{K.has(c.status)||V(c.id,n,o,i,l)})}async function G(n,o){const i=await f.listTasks(),l=new Set(i.map(c=>c.id).filter(Boolean));Array.from(a.keys()).forEach(c=>{if(l.has(c))return;W(c);const x=a.get(c);x&&!K.has(x.status)&&a.set(c,{...x,status:"failed",message:"任务不存在，可能后端已重启或任务已清理",updatedAt:new Date().toISOString()})}),i.forEach(c=>P(c,n,o)),Q(n)}function ee(n){const o=ae((n==null?void 0:n.src)||""),i=String((n==null?void 0:n.fileName)||"").trim();return{src:n.src,type:n.type||"unknown",title:n.title||"",duration:Number(n.duration||0)||0,mimeType:n.mimeType||"",fileName:i||o,requestHeaders:oe()}}function oe(){var c;const n={},o=String((navigator==null?void 0:navigator.userAgent)||"").trim(),i=String(((c=window==null?void 0:window.location)==null?void 0:c.href)||"").trim(),l=String((document==null?void 0:document.cookie)||"").trim();return o&&(n["User-Agent"]=o),i&&(n.Referer=i),l&&(n.Cookie=l),n}function ae(n){var i;const o=((i=String(n||"").split("/").pop())==null?void 0:i.split("?")[0])||"";if(!o)return"";try{return decodeURIComponent(o).replace(/\.[0-9A-Za-z]{1,6}$/,"")}catch{return o.replace(/\.[0-9A-Za-z]{1,6}$/,"")}}function He(n){return{videos:n.map(o=>ee(o)),pageUrl:window.location.href,pageTitle:document.title}}function pe(n,o){return n&&typeof n=="object"&&n.channel===de&&n.type===o&&typeof n.requestId=="string"}function Fe(){const n=document.querySelectorAll("iframe, frame"),o=[];return n.forEach(i=>{i!=null&&i.contentWindow&&o.push(i.contentWindow)}),o}function fe(n){const o={channel:de,type:Me,requestId:n};Fe().forEach(i=>{try{i.postMessage(o,"*")}catch(l){g.debug("向子 frame 分发捕获请求失败",l)}})}function he(){return new it().getAllVideos().map(i=>({...i,frameUrl:window.location.href,frameTitle:document.title||""}))}function me(n,o="",i=""){return!n||typeof n!="object"||!n.src?null:{...n,frameUrl:String(n.frameUrl||o||""),frameTitle:String(n.frameTitle||i||"")}}function Pe(n,o){if(!n||o!=null&&o.supported&&(n==null?void 0:n.supported)===!1)return o;if((o==null?void 0:o.supported)===!1&&(n!=null&&n.supported))return n;const i=Number((n==null?void 0:n.duration)||0)+Number((n==null?void 0:n.width)||0)*Number((n==null?void 0:n.height)||0);return Number((o==null?void 0:o.duration)||0)+Number((o==null?void 0:o.width)||0)*Number((o==null?void 0:o.height)||0)>i?o:n}function We(n){const o=new Map;return n.forEach(i=>{const l=me(i);if(!l)return;const c=String(l.src||"").trim();if(!c)return;const x=o.get(c);o.set(c,Pe(x,l))}),Array.from(o.values())}async function ge(n=wt){const o=`vd_capture_${Date.now()}_${Math.random().toString(36).slice(2,10)}`,i=he(),l=[...i],c=A=>{const N=A==null?void 0:A.data;pe(N,De)&&N.requestId===o&&Array.isArray(N.videos)&&N.videos.forEach(I=>{const E=me(I,N.frameUrl,N.frameTitle);E&&l.push(E)})};window.addEventListener("message",c);try{fe(o),await new Promise(A=>{window.setTimeout(A,n)})}finally{window.removeEventListener("message",c)}const x=We(l);return g.info("跨 frame 捕获完成",{localCount:i.length,totalCount:x.length,remoteCount:Math.max(0,x.length-i.length)}),x}function _e(){window.addEventListener("message",n=>{const o=n==null?void 0:n.data;if(!pe(o,Me))return;const i=o.requestId;if(u.has(i))return;u.add(i);let l=[];try{l=he()}catch(c){g.warn("子 frame 捕获视频失败",c)}fe(i);try{window.top.postMessage({channel:de,type:De,requestId:i,frameUrl:window.location.href,frameTitle:document.title||"",videos:l},"*")}catch(c){g.warn("子 frame 回传捕获结果失败",c)}window.setTimeout(()=>{u.delete(i)},15e3)})}function je(n,o){document.addEventListener("keydown",async i=>{const l=String(i.key||"").toLowerCase();if(i.ctrlKey&&i.shiftKey&&l===vt){if(i.preventDefault(),!h)return;h=!1;const c=document.getElementById("vd-panel");(!c||c.style.display==="none"||c.style.display==="")&&Be(),m(o,"正在跨 frame 捕获视频...");try{e=await ge(),n.render(e),m(o,`已捕获 ${e.length} 个视频资源`)}catch(x){g.error("快捷键捕获视频失败",x),m(o,`捕获失败: ${(x==null?void 0:x.message)||"未知错误"}`)}setTimeout(()=>{h=!0},500)}})}function Ve(n,o,i,l){if(!(!n||typeof n!="object")){if(n.event==="task.list"&&Array.isArray(n.tasks)){n.tasks.forEach(c=>P(c,i,l));return}n.task&&(P(n.task,i,l),n.event&&n.event.startsWith("task.")&&m(o,`后端状态: ${F(n.task.status)}`))}}async function be(n,o,i,l){b&&(b.close(),b=null),$(n,"disconnected","后端: 连接中"),b=f.connectTaskStream({onOpen:()=>{y=!0,$(n,"connected","后端: WebSocket 已连接"),S()},onMessage:c=>{Ve(c,o,i,l)},onClose:()=>{y=!1,$(n,"polling","后端: WebSocket 断开，切换轮询"),Z(o,n,i,l)},onError:c=>{y=!1,$(n,"polling","后端: 连接异常，切换轮询"),g.warn("WebSocket 异常",c),Z(o,n,i,l)}})}async function Oe(){var te,Ce;g.info("videoDownloader 初始化开始",{logLevel:_.logLevel});const n=mt(),o=at(),i=n.querySelector(".vd-panel-note");if(o&&i){const v=st(o);i.textContent=`支持直链视频与 m3u8 基础下载，当前来源策略：${v}`}tt({onToggle:nt}),le();const l=n.querySelector(".vd-video-grid"),c=n.querySelector("#vd-task-list"),x=n.querySelector("#vd-select-all"),A=n.querySelector("#vd-select-none"),N=n.querySelector("#vd-download"),I=n.querySelector("#vd-clear-storage"),E=n.querySelector("#vd-capture"),J=n.querySelector("#vd-reconnect"),U=n.querySelector("#vd-backend-status"),C=n.querySelector(".vd-status"),M=n.querySelector("#vd-downloaded-count");await T(M),f.setBaseUrl((Ce=(te=_.videoDownloader)==null?void 0:te.backend)==null?void 0:Ce.baseUrl,"");const R=new ft({grid:l,onSelectionChange:v=>{t=v,z()}});je(R,C),E.addEventListener("click",async()=>{g.info("开始手动捕获视频"),m(C,"正在跨 frame 捕获视频...");try{e=await ge(),R.render(e),m(C,`已捕获 ${e.length} 个视频资源`),g.info("手动捕获完成",{count:e.length})}catch(v){g.error("手动捕获失败",v),m(C,`捕获失败: ${(v==null?void 0:v.message)||"未知错误"}`)}}),x.addEventListener("click",()=>{R.selectAll()}),A.addEventListener("click",()=>{R.selectNone()}),I.addEventListener("click",async()=>{if(window.confirm("确认清除当前脚本的存储记录吗？")){s.length=0;try{await Ne(ie,[]),w(M),m(C,"存储已清除"),g.info("视频脚本存储已清除")}catch(k){m(C,"清除存储失败"),g.error("清除视频脚本存储失败",k)}}}),J.addEventListener("click",async()=>{await be(U,C,c,M);try{await G(c,M)}catch(v){g.warn("刷新任务列表失败",v)}}),c.addEventListener("click",async v=>{const k=v.target.closest("[data-action]");if(!k)return;const B=k.dataset.taskId;if(!B)return;const q=k.dataset.action;if(q==="open-task-dir"){try{const L=await f.openDirectory({taskId:B});m(C,(L==null?void 0:L.message)||"已请求后端打开目录")}catch(L){g.error("打开任务目录失败",L),m(C,`打开目录失败: ${(L==null?void 0:L.message)||"未知错误"}`)}return}if(q==="cancel-task")try{await f.cancelTask(B),m(C,`任务 ${B} 正在取消`)}catch(L){g.error("取消任务失败",L),m(C,`取消任务失败: ${(L==null?void 0:L.message)||"未知错误"}`)}}),N.addEventListener("click",async()=>{if(t.length===0){alert("请先选择要下载的视频");return}const v=t.filter(k=>(k==null?void 0:k.src)&&(k==null?void 0:k.supported)!==!1&&!String(k.src).startsWith("blob:"));if(v.length===0){alert("当前选中资源都不支持提交到后端，请至少选择一个可下载资源");return}g.info("提交后端视频任务",{count:v.length}),m(C,`正在提交任务（${v.length} 个）...`);try{let k=0;const B=[];for(const q of v){const L=He([q]);try{const X=await f.createTask(L),ne=X==null?void 0:X.taskId;if(!ne)throw new Error("后端未返回 taskId");const Ye=await f.getTask(ne);P(Ye,c,M),k+=1,y||V(ne,C,U,c,M)}catch(X){const ne=String((q==null?void 0:q.fileName)||ae((q==null?void 0:q.src)||"")||"未命名");B.push(`${ne}: ${(X==null?void 0:X.message)||"未知错误"}`)}}if(B.length===0)m(C,`任务已提交: ${k} 个`);else if(k>0)m(C,`部分提交失败（成功 ${k}，失败 ${B.length}）`),alert(`以下任务提交失败:
+${B.join(`
+`)}`);else throw new Error(B.join("; "))}catch(k){g.error("任务提交失败",k),m(C,`任务提交失败: ${(k==null?void 0:k.message)||"未知错误"}`)}});function z(){const v=t.length;N.disabled=v===0,N.textContent=v===0?"提交任务":`提交任务 (${v})`}await be(U,C,c,M);try{await G(c,M)}catch(v){g.warn("初始化任务列表失败",v),m(C,`后端暂不可用: ${(v==null?void 0:v.message)||"未知错误"}`),$(U,"polling","后端: 请求失败，轮询模式")}z(),g.info("videoDownloader 初始化完成",{downloadedCount:s.length})}function ve(){Oe().catch(n=>{g.error("videoDownloader 初始化失败",n)})}if(_e(),!r){g.debug("videoDownloader 已在子 frame 启用捕获桥接");return}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",ve):ve()})();

@@ -11,6 +11,16 @@ function getFileName(url) {
   }
 }
 
+function getEditableFileName(video) {
+  const rawName = String(video?.fileName || '').trim();
+  if (rawName) {
+    return rawName;
+  }
+
+  const fallback = getFileName(video?.src || '');
+  return fallback.replace(/\.[0-9A-Za-z]{1,6}$/, '');
+}
+
 function truncate(str, maxLen) {
   if (!str || str.length <= maxLen) return str;
   return str.substring(0, maxLen - 3) + '...';
@@ -38,6 +48,15 @@ function formatType(type) {
   return String(type).toUpperCase();
 }
 
+function isVideoSelectable(video) {
+  return video?.supported !== false;
+}
+
+function getUnselectableReason(video) {
+  const reason = String(video?.unsupportedReason || '').trim() || '当前资源暂不支持下载';
+  return `不可下载: ${reason}`;
+}
+
 /**
  * 视频选择器
  */
@@ -54,6 +73,8 @@ export class VideoSelector extends ResourceSelector {
         checkbox: 'vd-checkbox',
         info: 'vd-video-info',
       },
+      isSelectable: (video) => isVideoSelectable(video),
+      getDisabledReason: (video) => getUnselectableReason(video),
       createThumbnail: (video, index, helpers) => {
         const thumb = helpers.createElement('div', { className: 'vd-video-thumb' });
 
@@ -106,15 +127,37 @@ export class VideoSelector extends ResourceSelector {
       createInfo: (video, index, helpers) => {
         const info = helpers.createElement('div', { className: 'vd-video-info' });
         const filename = getFileName(video.src);
+        const editableName = getEditableFileName(video);
 
         const meta = `${formatType(video.type)}  ·  ${formatDuration(video.duration)}`;
 
+        const nameInput = helpers.createElement('input', {
+          className: 'vd-filename-input',
+          type: 'text',
+          value: editableName,
+          placeholder: '自定义文件名',
+          title: '下载文件名（无需扩展名）',
+        });
+
+        if (!isVideoSelectable(video)) {
+          nameInput.disabled = true;
+          nameInput.title = getUnselectableReason(video);
+        }
+
+        const commitFileName = () => {
+          const value = String(nameInput.value || '').trim();
+          helpers.updateResource({ fileName: value || editableName });
+        };
+
+        nameInput.addEventListener('click', (event) => {
+          event.stopPropagation();
+        });
+        nameInput.addEventListener('input', commitFileName);
+        nameInput.addEventListener('change', commitFileName);
+
+        info.appendChild(nameInput);
         info.appendChild(
-          helpers.createElement(
-            'span',
-            { className: 'vd-filename', title: video.src },
-            truncate(filename, 26)
-          )
+          helpers.createElement('span', { className: 'vd-filename', title: video.src }, truncate(filename, 26))
         );
 
         info.appendChild(

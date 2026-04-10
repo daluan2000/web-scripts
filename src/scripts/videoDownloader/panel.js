@@ -1,5 +1,6 @@
 import { createElement } from '@/shared/dom.js';
 import { enableDraggable } from '@/shared/draggable.js';
+import { enableResizable } from '@/shared/resizable.js';
 import { hidePanel } from './floatingButton.js';
 
 /**
@@ -16,27 +17,32 @@ export function createPanel() {
       <span class="vd-panel-title">🎬 视频批量下载器</span>
       <button class="vd-panel-close" id="vd-close-btn" title="关闭">×</button>
     </div>
-    <div class="vd-panel-note">支持直链视频与 m3u8 基础下载，blob / dash / drm 暂不支持</div>
+    <div class="vd-panel-note">前端仅采集视频关键信息，下载任务由本机后端执行</div>
+    <div class="vd-backend-strip">
+      <span class="vd-backend-status disconnected" id="vd-backend-status">后端: 未连接</span>
+      <button class="vd-btn vd-btn-ghost" id="vd-reconnect">重连后端</button>
+    </div>
     <div class="vd-toolbar">
       <button class="vd-btn vd-btn-primary" id="vd-capture" title="快捷键: Ctrl+Shift+V">
         <span>🎯</span> 捕获视频
       </button>
       <button class="vd-btn" id="vd-select-all">全选</button>
       <button class="vd-btn" id="vd-select-none">全不选</button>
-      <button class="vd-btn vd-btn-success" id="vd-download" disabled>下载选中</button>
+      <button class="vd-btn vd-btn-success" id="vd-download" disabled>提交任务</button>
       <button class="vd-btn vd-btn-warning" id="vd-clear-storage">清除存储</button>
-      <div class="vd-toolbar-spacer"></div>
-      <label class="vd-prefix-label">
-        文件前缀:
-        <input type="text" id="vd-prefix" class="vd-input" placeholder="如: video" />
-      </label>
     </div>
     <div class="vd-video-grid"></div>
+    <div class="vd-task-panel">
+      <div class="vd-task-header">
+        <span>后端任务进度</span>
+      </div>
+      <div class="vd-task-list" id="vd-task-list"></div>
+    </div>
     <div class="vd-panel-footer">
       <span class="vd-status">点击「捕获视频」开始</span>
       <span class="vd-downloaded-count" id="vd-downloaded-count">历史下载数: 0</span>
-      <div class="vd-resize-handle"></div>
     </div>
+    <div class="vd-resize-handle"></div>
   `;
 
   document.body.appendChild(panel);
@@ -66,43 +72,12 @@ function initDraggable(panel) {
 
 function initResizable(panel) {
   const handle = panel.querySelector('.vd-resize-handle');
-  let isResizing = false;
-  let startX = 0;
-  let startY = 0;
-  let startWidth = 0;
-  let startHeight = 0;
+  if (!handle) return;
 
-  handle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    isResizing = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startWidth = panel.offsetWidth;
-    startHeight = panel.offsetHeight;
-
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'se-resize';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    const newWidth = Math.max(320, startWidth + dx);
-    const newHeight = Math.max(220, startHeight + dy);
-
-    panel.style.width = `${newWidth}px`;
-    panel.style.height = `${newHeight}px`;
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (!isResizing) return;
-
-    isResizing = false;
-    document.body.style.userSelect = '';
-    document.body.style.cursor = '';
+  enableResizable({
+    target: panel,
+    handle,
+    minWidth: 300,
+    minHeight: 200,
   });
 }

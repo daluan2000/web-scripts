@@ -29,6 +29,12 @@ export const config = {
     storageKeys: {
       downloadHistory: 'videoDownloader_download_history',
     },
+    backend: {
+      baseUrl: 'http://127.0.0.1:8787',
+      wsUrl: '',
+      requestTimeout: 20000,
+      pollingInterval: 2500,
+    },
   },
 };
 

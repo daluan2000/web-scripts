@@ -1,5 +1,6 @@
 import { createElement, removeElement } from '@/shared/dom.js';
 import { enableDraggable } from '@/shared/draggable.js';
+import { enableResizable } from '@/shared/resizable.js';
 import { showPanel, hidePanel } from './floatingButton.js';
 
 /**
@@ -38,8 +39,8 @@ export function createPanel() {
     <div class="id-panel-footer">
       <span class="id-status">点击「捕获图片」开始</span>
       <span class="id-downloaded-count" id="id-downloaded-count">历史下载数: 0</span>
-      <div class="id-resize-handle"></div>
     </div>
+    <div class="id-resize-handle"></div>
   `;
 
   document.body.appendChild(panel);
@@ -82,42 +83,13 @@ function initDraggable(panel) {
  */
 function initResizable(panel) {
   const handle = panel.querySelector('.id-resize-handle');
-  let isResizing = false;
-  let startX, startY, startWidth, startHeight;
+  if (!handle) return;
 
-  handle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    isResizing = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startWidth = panel.offsetWidth;
-    startHeight = panel.offsetHeight;
-
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'se-resize';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    const newWidth = Math.max(300, startWidth + dx);
-    const newHeight = Math.max(200, startHeight + dy);
-
-    panel.style.width = newWidth + 'px';
-    panel.style.height = newHeight + 'px';
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    }
+  enableResizable({
+    target: panel,
+    handle,
+    minWidth: 300,
+    minHeight: 200,
   });
 }
 

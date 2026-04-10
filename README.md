@@ -94,23 +94,25 @@ A: 请确认：
 
 ## Video Downloader（视频批量下载脚本）
 
-批量捕获并下载页面内视频资源，交互方式与图片下载器保持一致。
+批量捕获页面视频关键信息，并提交到本机后端下载，交互方式与图片下载器保持一致。
 
 ### 核心功能
 - 自动捕获页面中的视频资源（video/source、部分 data-*、视频直链）
-- 支持选择后批量下载
-- 支持 m3u8 下载并自动转为 mp4（解析分片后在浏览器端转封装）
+- 支持选择后批量提交下载任务（FastAPI + yt-dlp）
+- 实时显示后端任务状态和进度（WebSocket，失败时自动降级轮询）
+- 支持任务级透传 Cookie / Authorization / Referer / User-Agent
 - 快捷键 `Ctrl+Shift+V` 快速捕获
 
 ### 当前支持范围
-- 直接视频地址：`mp4`、`webm`、`mov`、`m4v`、`mkv`、`avi`、`flv`、`ts`
-- HLS：`m3u8`（下载后输出 `mp4`）
+- 前端负责：捕获/选择/任务提交/进度展示
+- 后端负责：使用 yt-dlp 下载并直接落盘到本机目录
+- 协议默认：`http://127.0.0.1:8787` + `ws://127.0.0.1:8787`
 
 ### 当前限制
 - `blob:` 资源无法直接提取源地址
-- `dash/mpd` 与 DRM 受保护视频暂不支持
-- 部分站点可能受登录态、跨域策略影响
-- 首次 m3u8 转 mp4 会加载 FFmpeg 运行时，耗时和内存占用会明显高于直链下载
+- DRM 受保护视频通常无法通过常规方式下载
+- 部分站点可能依赖 HttpOnly Cookie，前端无法直接读取
+- 如 HTTPS 页面阻断本机 HTTP/WS，请切到 HTTPS/WSS 后端
 
 ---
 
@@ -203,6 +205,17 @@ npm run dev
 
 ```bash
 npm run dev:video
+```
+
+videoDownloader 需要配合本机后端运行：
+
+```bash
+cd src/scripts/videoDownloader/backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --host 127.0.0.1 --port 8787 --reload
 ```
 
 ### 生产打包

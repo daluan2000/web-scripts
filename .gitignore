@@ -25,3 +25,9 @@ npm-debug.log*
 
 # Cache
 .cache/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+*/**/tmp*/

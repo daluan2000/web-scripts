@@ -14,10 +14,11 @@ export class VideoCapture {
       'mkv',
       'avi',
       'flv',
-      'ts',
       'm3u8',
       'mpd',
     ];
+    this.dynamicScriptExtensions = ['php', 'asp', 'aspx', 'jsp', 'cgi', 'do', 'action'];
+    this.pageExtensions = ['html', 'htm', 'shtml', 'xhtml'];
   }
 
   /**
@@ -32,7 +33,7 @@ export class VideoCapture {
     this.captureFromLinks(videos, seen);
     this.captureFromDataAttrs(videos, seen);
 
-    return videos.filter((item) => this.isLikelyVideoUrl(item.src));
+    return videos.filter((item) => this.isLikelyVideoUrl(item.src, item.captureSource));
   }
 
   captureFromVideoElements(results, seen) {
@@ -56,7 +57,7 @@ export class VideoCapture {
         width: video.videoWidth || video.clientWidth || 0,
         height: video.videoHeight || video.clientHeight || 0,
         title: video.getAttribute('title') || document.title || '',
-      }, results, seen);
+      }, results, seen, 'video-element');
     });
   }
 
@@ -74,7 +75,8 @@ export class VideoCapture {
           title: link.textContent?.trim() || link.getAttribute('title') || document.title || '',
         },
         results,
-        seen
+        seen,
+        'link'
       );
     });
   }
@@ -112,12 +114,13 @@ export class VideoCapture {
           title: el.getAttribute('title') || document.title || '',
         },
         results,
-        seen
+        seen,
+        'data-attr'
       );
     });
   }
 
-  captureFromCandidates(candidates, metadata, results, seen) {
+  captureFromCandidates(candidates, metadata, results, seen, captureSource = 'unknown') {
     candidates
       .map((value) => this.normalizeUrl(value))
       .filter(Boolean)
@@ -130,11 +133,16 @@ export class VideoCapture {
 
         const enhancedUrl = enhanceVideoUrl(normalizedUrl);
         const mediaType = this.detectMediaType(enhancedUrl);
-        const supported = mediaType !== 'blob' && mediaType !== 'dash';
+        if (mediaType === 'ts' && this.isLikelyHlsSegmentUrl(enhancedUrl)) {
+          return;
+        }
+
+        const supported = mediaType !== 'blob' && mediaType !== 'dash' && mediaType !== 'dynamic';
 
         results.push({
           src: enhancedUrl,
           type: mediaType,
+          captureSource,
           mimeType: this.guessMimeType(enhancedUrl),
           duration: metadata.duration || 0,
           width: metadata.width || 0,
@@ -176,23 +184,51 @@ export class VideoCapture {
     }
   }
 
-  isLikelyVideoUrl(url) {
+  getUrlMatchTarget(url) {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.pathname || ''}${parsed.search || ''}`.toLowerCase();
+    } catch {
+      return String(url || '').toLowerCase();
+    }
+  }
+
+  isLikelyVideoUrl(url, captureSource = 'unknown') {
     if (!url) return false;
 
-    const lower = url.toLowerCase();
-    if (lower.startsWith('blob:')) return true;
+    const rawLower = String(url).toLowerCase();
+    if (rawLower.startsWith('blob:')) return true;
 
-    const ext = this.extractExtension(lower);
+    const matchTarget = this.getUrlMatchTarget(url);
+    const ext = this.extractExtension(matchTarget);
+
+    if (ext && this.pageExtensions.includes(ext)) {
+      return false;
+    }
+
     if (ext && this.videoExtensions.includes(ext)) {
       return true;
     }
 
-    if (lower.includes('.m3u8') || lower.includes('.mpd')) {
+    if (ext && this.dynamicScriptExtensions.includes(ext)) {
       return true;
     }
 
-    if (lower.includes('video') || lower.includes('stream') || lower.includes('playurl')) {
+    if (matchTarget.includes('.m3u8') || matchTarget.includes('.mpd')) {
       return true;
+    }
+
+    if (captureSource === 'video-element') {
+      return true;
+    }
+
+    const hintPattern = /(?:^|[/?#&=_-])(stream|playurl|m3u8|mpd)(?:[/?#&=_-]|$)/i;
+    if (captureSource === 'link' || captureSource === 'data-attr') {
+      return hintPattern.test(matchTarget);
+    }
+
+    if (captureSource === 'unknown') {
+      return hintPattern.test(matchTarget);
     }
 
     return false;
@@ -208,9 +244,24 @@ export class VideoCapture {
     const ext = this.extractExtension(lower);
     if (!ext) return 'video';
 
+    if (this.dynamicScriptExtensions.includes(ext)) return 'dynamic';
+
     if (ext === 'm3u8') return 'm3u8';
     if (ext === 'mpd') return 'dash';
     return ext;
+  }
+
+  isLikelyHlsSegmentUrl(url) {
+    const lower = (url || '').toLowerCase();
+    if (!lower.includes('.ts')) {
+      return false;
+    }
+
+    return (
+      /\/(seg|segment|chunk|frag|media|part)[^/]*\d+[^/]*\.ts(\?|$)/i.test(lower) ||
+      /[?&](seg|segment|chunk|frag|part|start|end)=/i.test(lower) ||
+      /\/\d{1,6}\.ts(\?|$)/i.test(lower)
+    );
   }
 
   extractExtension(url) {
@@ -246,6 +297,10 @@ export class VideoCapture {
 
     if (mediaType === 'dash') {
       return 'dash/mpd 暂不支持';
+    }
+
+    if (mediaType === 'dynamic') {
+      return '动态脚本地址（如 .php）暂不支持自动下载';
     }
 
     return '当前资源暂不支持';

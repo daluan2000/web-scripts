@@ -30,6 +30,8 @@ export class ResourceSelector {
 
     this.createThumbnail = options.createThumbnail || this.defaultCreateThumbnail.bind(this);
     this.createInfo = options.createInfo || this.defaultCreateInfo.bind(this);
+    this.isSelectable = options.isSelectable || (() => true);
+    this.getDisabledReason = options.getDisabledReason || (() => '当前资源不可选');
 
     this.selected = new Set();
     this.resources = [];
@@ -66,6 +68,13 @@ export class ResourceSelector {
     const item = this.grid.querySelector(`[data-index="${index}"]`);
     if (!item) return;
 
+    const resource = this.resources[index];
+    if (!this.isSelectable(resource, index)) {
+      const reason = this.getDisabledReason(resource, index);
+      item.title = reason || '';
+      return;
+    }
+
     if (this.selected.has(index)) {
       this.selected.delete(index);
       item.classList.remove(this.classNames.selected);
@@ -82,7 +91,11 @@ export class ResourceSelector {
    */
   selectAll() {
     this.selected.clear();
-    this.resources.forEach((_, index) => this.selected.add(index));
+    this.resources.forEach((resource, index) => {
+      if (this.isSelectable(resource, index)) {
+        this.selected.add(index);
+      }
+    });
     this.updateUI();
     this.onSelectionChange(this.getSelectedResources());
   }
@@ -103,6 +116,7 @@ export class ResourceSelector {
   getSelectedResources() {
     return Array.from(this.selected)
       .filter((index) => index >= 0 && index < this.resources.length)
+      .filter((index) => this.isSelectable(this.resources[index], index))
       .map((index) => this.resources[index]);
   }
 
@@ -112,13 +126,23 @@ export class ResourceSelector {
       dataset: { index },
     });
 
+    if (!this.isSelectable(resource, index)) {
+      item.classList.add('unselectable');
+      item.title = this.getDisabledReason(resource, index) || '';
+      item.setAttribute('aria-disabled', 'true');
+    }
+
     const helpers = {
       toggle: () => this.toggle(index),
       createElement,
       updateResource: (patch) => {
         if (!patch || typeof patch !== 'object') return;
+        if (this.resources[index] && typeof this.resources[index] === 'object') {
+          Object.assign(this.resources[index], patch);
+          return;
+        }
+
         this.resources[index] = {
-          ...this.resources[index],
           ...patch,
         };
       },

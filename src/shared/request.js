@@ -45,7 +45,21 @@ export async function request(url, options = {}) {
             resolve({ data: response.responseText, status: response.status });
           }
         } else {
-          reject(new Error(`请求失败: ${response.status}`));
+          let detail = '';
+          const text = String(response.responseText || '').trim();
+          if (text) {
+            try {
+              const parsed = JSON.parse(text);
+              detail = String(parsed?.detail || text);
+            } catch {
+              detail = text;
+            }
+          }
+
+          const message = detail
+            ? `请求失败: ${response.status} - ${detail}`
+            : `请求失败: ${response.status}`;
+          reject(new Error(message));
         }
       },
       onerror: () => reject(new Error('网络请求失败')),
