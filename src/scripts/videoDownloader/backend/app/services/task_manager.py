@@ -262,7 +262,6 @@ class DownloadTaskManager:
         try:
             await self._wait_for_runner_stop(task, timeout_seconds=float(timeout_seconds))
         except asyncio.TimeoutError as error:
-            task.status = TaskStatus.cancelling
             task.message = f"取消超时（{timeout_seconds}s），任务仍在停止中"
             task.error = task.message
             task.updated_at = _utcnow()
@@ -320,7 +319,7 @@ class DownloadTaskManager:
                     continue
                 if not path.name.startswith(task.id):
                     continue
-                if any(token in path.name for token in (".part", ".ytdl", ".aria2", ".temp", ".frag")):
+                if any(token in path.name for token in (".part", ".ytdl", ".frag")):
                     with contextlib.suppress(Exception):
                         path.unlink(missing_ok=True)
 

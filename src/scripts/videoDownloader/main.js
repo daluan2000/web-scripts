@@ -36,6 +36,7 @@ const FRAME_CAPTURE_CHANNEL = 'videoDownloader.frameCapture.v1';
 const FRAME_CAPTURE_REQUEST = 'capture-request';
 const FRAME_CAPTURE_RESPONSE = 'capture-response';
 const FRAME_CAPTURE_TIMEOUT_MS = 1200;
+const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
 (function () {
   'use strict';
@@ -617,7 +618,7 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
       window.setTimeout(() => {
         handledCaptureRequestIds.delete(requestId);
-      }, 15000);
+      }, FRAME_CAPTURE_REQUEST_TTL_MS);
     });
   }
 
@@ -682,6 +683,15 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
     setBackendStatus(backendStatusEl, 'disconnected', '后端: 连接中');
 
+    const enterPollingFallback = (message, error = null) => {
+      wsConnected = false;
+      setBackendStatus(backendStatusEl, 'polling', message);
+      if (error) {
+        logger.warn('WebSocket 异常', error);
+      }
+      startPollingActiveTasks(statusText, backendStatusEl, taskListEl, downloadedCountText);
+    };
+
     wsHandle = backendClient.connectTaskStream({
       onOpen: () => {
         wsConnected = true;
@@ -692,15 +702,10 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
         handleWsMessage(event, statusText, taskListEl, downloadedCountText);
       },
       onClose: () => {
-        wsConnected = false;
-        setBackendStatus(backendStatusEl, 'polling', '后端: WebSocket 断开，切换轮询');
-        startPollingActiveTasks(statusText, backendStatusEl, taskListEl, downloadedCountText);
+        enterPollingFallback('后端: WebSocket 断开，切换轮询');
       },
       onError: (error) => {
-        wsConnected = false;
-        setBackendStatus(backendStatusEl, 'polling', '后端: 连接异常，切换轮询');
-        logger.warn('WebSocket 异常', error);
-        startPollingActiveTasks(statusText, backendStatusEl, taskListEl, downloadedCountText);
+        enterPollingFallback('后端: 连接异常，切换轮询', error);
       },
     });
   }
@@ -857,23 +862,15 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
         const fallbackMessage = cancelled ? '任务已取消' : '取消请求已发送，等待后端完成';
         setStatusText(statusText, `任务 ${taskId}: ${result?.message || fallbackMessage}`);
 
-        if (!wsConnected) {
-          try {
-            const latestTask = await backendClient.getTask(taskId);
-            upsertTask(latestTask, taskListEl, downloadedCountText);
-          } catch (refreshSingleError) {
-            logger.warn('取消后刷新单任务状态失败', { taskId, error: refreshSingleError });
-          }
+        if (!wsConnected && !taskPollers.has(taskId)) {
+          startTaskPolling(taskId, statusText, backendStatusEl, taskListEl, downloadedCountText);
         }
       } catch (error) {
         logger.error('取消任务失败', error);
         setStatusText(statusText, `取消任务失败: ${error?.message || '未知错误'}`);
 
-        try {
-          const latestTask = await backendClient.getTask(taskId);
-          upsertTask(latestTask, taskListEl, downloadedCountText);
-        } catch (refreshSingleError) {
-          logger.warn('取消失败后刷新单任务状态失败', { taskId, error: refreshSingleError });
+        if (!wsConnected && !taskPollers.has(taskId)) {
+          startTaskPolling(taskId, statusText, backendStatusEl, taskListEl, downloadedCountText);
         }
       } finally {
         pendingCancelTaskIds.delete(taskId);

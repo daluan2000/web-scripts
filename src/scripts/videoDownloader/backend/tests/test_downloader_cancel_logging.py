@@ -24,6 +24,20 @@ def test_should_suppress_rename_error_when_cancel_requested() -> None:
     )
 
 
+def test_should_suppress_fragment_error_when_cancel_requested() -> None:
+    assert _should_suppress_cancel_error(
+        "ERROR: fragment 12 not found",
+        lambda: True,
+    )
+
+
+def test_should_not_suppress_generic_no_such_file_error() -> None:
+    assert not _should_suppress_cancel_error(
+        "ERROR: No such file or directory",
+        lambda: True,
+    )
+
+
 def test_should_not_suppress_unrelated_error_message() -> None:
     assert not _should_suppress_cancel_error(
         "ERROR: HTTP Error 403: Forbidden",

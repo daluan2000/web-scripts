@@ -44,8 +44,6 @@ def _should_suppress_cancel_error(message: str, should_cancel: Callable[[], bool
     return (
         "unable to open for writing" in text
         or "unable to rename file" in text
-        or "no such file or directory" in text
-        or "frag" in text
         or "fragment" in text
     )
 
@@ -265,51 +263,34 @@ class YtDlpDownloader:
                 bool(request_headers.get("User-Agent")),
             )
 
-            retry_timeout = max(base_timeout * 2, 90)
-            retry_retries = max(base_retries + 2, 6)
             logger.warning(
-                "yt-dlp timeout, retrying with relaxed settings: task=%s item=%s timeout=%s retries=%s",
+                "yt-dlp timeout detected, stop relaxed retry path: task=%s item=%s timeout=%s retries=%s",
                 task_id,
                 item_index,
-                retry_timeout,
-                retry_retries,
+                base_timeout,
+                base_retries,
             )
-
-            try:
-                run_with_options(
-                    self._build_ydl_options(
-                        outtmpl=outtmpl,
-                        progress_hook=progress_hook,
-                        ydl_logger=ydl_logger,
-                        request_headers=request_headers,
-                        socket_timeout=retry_timeout,
-                        retries=retry_retries,
-                        cache_dir=cache_dir,
-                    )
+            if not direct_attempted and self._is_direct_download_candidate(video):
+                logger.warning(
+                    "yt-dlp timeout, trying direct fallback: task=%s item=%s url=%s",
+                    task_id,
+                    item_index,
+                    video.src,
                 )
-            except Exception as retry_error:  # noqa: BLE001
-                if not direct_attempted and self._is_direct_download_candidate(video):
-                    logger.warning(
-                        "yt-dlp retry failed, trying direct fallback: task=%s item=%s url=%s error=%s",
-                        task_id,
-                        item_index,
-                        video.src,
-                        retry_error,
-                    )
-                    return self._download_direct_file(
-                        video=video,
-                        work_dir=effective_work_dir,
-                        output_dir=output_dir,
-                        stem=stem,
-                        should_cancel=should_cancel,
-                        emit_progress=emit_progress,
-                        request_headers=request_headers,
-                        timeout=max(retry_timeout, 90),
-                    )
+                return self._download_direct_file(
+                    video=video,
+                    work_dir=effective_work_dir,
+                    output_dir=output_dir,
+                    stem=stem,
+                    should_cancel=should_cancel,
+                    emit_progress=emit_progress,
+                    request_headers=request_headers,
+                    timeout=max(base_timeout, 60),
+                )
 
-                raise yt_dlp.utils.DownloadError(
-                    f"下载超时（host={host}），已重试仍失败。请检查网络连通性、登录态 Cookie/Referer、站点防盗链或代理设置"
-                ) from retry_error
+            raise yt_dlp.utils.DownloadError(
+                f"下载超时（host={host}）。请检查网络连通性、登录态 Cookie/Referer、站点防盗链或代理设置"
+            ) from error
         except Exception as error:  # noqa: BLE001
             if not direct_attempted and self._is_direct_download_candidate(video):
                 logger.warning(
@@ -361,12 +342,9 @@ class YtDlpDownloader:
     ) -> Path | None:
         if final_filename:
             candidate = Path(final_filename)
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-            joined = work_dir / candidate.name
-            if joined.exists() and joined.is_file():
-                return joined
+            for path in (candidate, work_dir / candidate.name):
+                if path.is_file():
+                    return path
 
         preferred = sorted(
             path
