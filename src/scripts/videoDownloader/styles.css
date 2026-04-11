@@ -49,7 +49,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   width: 600px;
-  height: 450px;
+  height: 675px;
   min-width: 300px;
   min-height: 200px;
   background: #fefefe;
@@ -374,7 +374,14 @@
 .vd-task-message {
   font-size: 11px;
   color: #334155;
-  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 6px;
+  border: 1px solid #dbe6ee;
+  border-radius: 6px;
+  background: #f8fafc;
 }
 
 .vd-task-cancel {

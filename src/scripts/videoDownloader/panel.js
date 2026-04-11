@@ -29,6 +29,7 @@ export function createPanel() {
       <button class="vd-btn" id="vd-select-all">全选</button>
       <button class="vd-btn" id="vd-select-none">全不选</button>
       <button class="vd-btn vd-btn-success" id="vd-download" disabled>提交任务</button>
+      <button class="vd-btn" id="vd-cleanup-parts">清理 part 目录</button>
       <button class="vd-btn vd-btn-warning" id="vd-clear-storage">清除存储</button>
     </div>
     <div class="vd-video-grid"></div>

@@ -137,15 +137,23 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
     }
   }
 
-  function formatTaskMeta(task) {
-    const progress = Math.round((Number(task.progress || 0) || 0) * 100);
-    return [
-      `进度 ${progress}%`,
-      `成功 ${task.success || 0}`,
-      `失败 ${task.failed || 0}`,
-      task.speed ? `速度 ${task.speed}` : '',
-      task.eta ? `ETA ${task.eta}` : '',
-    ].filter(Boolean);
+  function getTaskProgressText(task) {
+    if (!task) return '等待后端更新状态';
+
+    const rawLine = String(task.progressText || '').trim();
+    if (task.status === 'running' && rawLine) {
+      return rawLine;
+    }
+
+    if (TERMINAL_STATUSES.has(task.status)) {
+      return task.message || '任务已结束';
+    }
+
+    if (rawLine) {
+      return rawLine;
+    }
+
+    return '等待后端进度输出...';
   }
 
   function updateTaskHistory(task, downloadedCountText) {
@@ -183,11 +191,17 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
     taskListEl.innerHTML = '';
 
-    const tasks = Array.from(taskMap.values()).sort((a, b) => {
-      const aTime = Date.parse(a.updatedAt || a.createdAt || 0) || 0;
-      const bTime = Date.parse(b.updatedAt || b.createdAt || 0) || 0;
-      return bTime - aTime;
-    });
+    const tasks = Array.from(taskMap.values())
+      .map((task, index) => ({ task, index }))
+      .sort((a, b) => {
+        const aTime = Date.parse(a.task.createdAt || 0) || 0;
+        const bTime = Date.parse(b.task.createdAt || 0) || 0;
+        if (bTime !== aTime) {
+          return bTime - aTime;
+        }
+        return a.index - b.index;
+      })
+      .map(({ task }) => task);
 
     if (tasks.length === 0) {
       const empty = document.createElement('div');
@@ -216,27 +230,9 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
       rowTop.appendChild(statusTag);
       card.appendChild(rowTop);
 
-      const progress = document.createElement('div');
-      progress.className = 'vd-task-progress';
-
-      const progressBar = document.createElement('div');
-      progressBar.className = 'vd-task-progress-bar';
-      progressBar.style.width = `${Math.round((Number(task.progress || 0) || 0) * 100)}%`;
-      progress.appendChild(progressBar);
-      card.appendChild(progress);
-
-      const meta = document.createElement('div');
-      meta.className = 'vd-task-meta';
-      formatTaskMeta(task).forEach((text) => {
-        const span = document.createElement('span');
-        span.textContent = text;
-        meta.appendChild(span);
-      });
-      card.appendChild(meta);
-
       const message = document.createElement('div');
       message.className = 'vd-task-message';
-      message.textContent = task.message || '等待后端更新状态';
+      message.textContent = getTaskProgressText(task);
       card.appendChild(message);
 
       const rowBottom = document.createElement('div');
@@ -707,6 +703,7 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
     const selectAllBtn = panel.querySelector('#vd-select-all');
     const selectNoneBtn = panel.querySelector('#vd-select-none');
     const downloadBtn = panel.querySelector('#vd-download');
+    const cleanupPartDirsBtn = panel.querySelector('#vd-cleanup-parts');
     const clearStorageBtn = panel.querySelector('#vd-clear-storage');
     const captureBtn = panel.querySelector('#vd-capture');
     const reconnectBtn = panel.querySelector('#vd-reconnect');
@@ -771,6 +768,25 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
       }
     });
 
+    cleanupPartDirsBtn.addEventListener('click', async () => {
+      const confirmed = window.confirm('确认删除所有非当前下载中的 part 目录吗？');
+      if (!confirmed) return;
+
+      try {
+        const result = await backendClient.cleanupPartDirs();
+        const deletedCount = Number(result?.deletedCount || 0) || 0;
+        setStatusText(statusText, `已清理 part 目录: ${deletedCount} 个`);
+        logger.info('已清理非运行中的 part 目录', {
+          deletedCount,
+          deletedDirs: result?.deletedDirs || [],
+          runningTaskIds: result?.runningTaskIds || [],
+        });
+      } catch (error) {
+        logger.error('清理 part 目录失败', error);
+        setStatusText(statusText, `清理 part 目录失败: ${error?.message || '未知错误'}`);
+      }
+    });
+
     reconnectBtn.addEventListener('click', async () => {
       await connectTaskStream(backendStatusEl, statusText, taskListEl, downloadedCountText);
 
@@ -803,12 +819,38 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
       if (action !== 'cancel-task') return;
 
+      const cancelBtn = target;
+      const previousText = cancelBtn.textContent;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = '取消中...';
+      setStatusText(statusText, `任务 ${taskId} 正在取消...`);
+
       try {
-        await backendClient.cancelTask(taskId);
-        setStatusText(statusText, `任务 ${taskId} 正在取消`);
+        const result = await backendClient.cancelTask(taskId);
+        setStatusText(statusText, `任务 ${taskId}: ${result?.message || '已发送取消请求'}`);
+
+        try {
+          const latestTask = await backendClient.getTask(taskId);
+          upsertTask(latestTask, taskListEl, downloadedCountText);
+        } catch (refreshSingleError) {
+          logger.warn('刷新单任务状态失败', { taskId, error: refreshSingleError });
+        }
+
+        try {
+          await refreshTaskList(taskListEl, downloadedCountText);
+        } catch (refreshListError) {
+          logger.warn('取消后刷新任务列表失败', refreshListError);
+        }
       } catch (error) {
         logger.error('取消任务失败', error);
         setStatusText(statusText, `取消任务失败: ${error?.message || '未知错误'}`);
+      } finally {
+        const currentTask = taskMap.get(taskId);
+        const isTerminal = currentTask ? TERMINAL_STATUSES.has(currentTask.status) : false;
+        if (!isTerminal) {
+          cancelBtn.disabled = false;
+          cancelBtn.textContent = previousText;
+        }
       }
     });
 

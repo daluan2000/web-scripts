@@ -21,6 +21,7 @@ from app.core.models import (
 from app.services.downloader import YtDlpDownloader
 
 TERMINAL_STATUSES = {TaskStatus.success, TaskStatus.failed, TaskStatus.cancelled}
+PART_DIR_MARKER_FILE = ".vd_part_dir"
 
 
 def _utcnow() -> datetime:
@@ -31,8 +32,9 @@ def _sanitize_file_stem(name: str) -> str:
     value = (name or "").strip()
     value = value.replace("\\", "/").split("/")[-1]
     value = re.sub(r"\.[0-9A-Za-z]{1,6}$", "", value)
-    value = re.sub(r"[^0-9A-Za-z._-]+", "_", value)
-    value = value.strip("._-")
+    value = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "_", value)
+    value = re.sub(r"\s+", " ", value)
+    value = value.strip(" .")
     return value[:120] or "video"
 
 
@@ -77,10 +79,12 @@ class TaskState:
     success: int
     failed: int
     progress: float
+    progress_text: str
     speed: str
     eta: str
     message: str
     output_dir: str
+    part_dir: str = ""
     cache_dir: str = ""
     error: str = ""
     items: list[TaskItemState] = field(default_factory=list)
@@ -99,6 +103,7 @@ class TaskState:
             success=self.success,
             failed=self.failed,
             progress=round(self.progress, 4),
+            progressText=self.progress_text,
             speed=self.speed,
             eta=self.eta,
             message=self.message,
@@ -145,6 +150,8 @@ class DownloadTaskManager:
             if existing_task and existing_task.status in TERMINAL_STATUSES:
                 self._tasks.pop(task_id, None)
 
+        part_dir = self._prepare_task_part_dir(output_dir=output_dir, task_id=task_id)
+
         now = _utcnow()
         items = [
             TaskItemState(
@@ -167,11 +174,13 @@ class DownloadTaskManager:
             success=0,
             failed=0,
             progress=0.0,
+            progress_text="",
             speed="",
             eta="",
             message="任务已创建，等待执行",
             output_dir=str(output_dir),
-            cache_dir=str((output_dir / ".task_cache" / task_id).resolve()),
+            part_dir=str(part_dir),
+            cache_dir=str(part_dir),
             items=items,
         )
 
@@ -183,12 +192,11 @@ class DownloadTaskManager:
         return task
 
     def _has_existing_output_file(self, output_dir: Path, file_stem: str) -> bool:
-        if (output_dir / file_stem).is_file():
-            return True
-        pattern = f"{file_stem}.*"
-        for path in output_dir.glob(pattern):
+        for path in output_dir.iterdir():
             if path.is_file():
-                return True
+                candidate_stem = path.stem
+                if candidate_stem == file_stem:
+                    return True
         return False
 
     def get_default_output_dir(self) -> str:
@@ -213,19 +221,48 @@ class DownloadTaskManager:
         if task.status in {TaskStatus.success, TaskStatus.failed, TaskStatus.cancelled}:
             return task
 
+        if task.status == TaskStatus.queued:
+            task.cancel_requested = True
+            for item in task.items:
+                if item.status in {TaskStatus.queued, TaskStatus.running}:
+                    item.status = TaskStatus.cancelled
+                    item.error = "任务已取消"
+
+            # For queued tasks we can clean temp files immediately.
+            self._cleanup_task_cache_files(task)
+            if task.runner and not task.runner.done():
+                task.runner.cancel()
+
+            task.speed = ""
+            task.eta = ""
+            task.progress_text = ""
+            self._set_terminal_status(task, TaskStatus.cancelled, "任务已取消")
+            await self._emit("task.cancelled", task)
+            return task
+
         task.cancel_requested = True
         for item in task.items:
             if item.status in {TaskStatus.queued, TaskStatus.running}:
                 item.status = TaskStatus.cancelled
                 item.error = "任务已取消"
-        task.message = "正在取消任务"
+        task.message = "已收到取消请求，正在停止任务并清理临时文件"
         task.updated_at = _utcnow()
         await self._emit("task.cancelling", task)
         return task
 
+    def _prepare_task_part_dir(self, output_dir: Path, task_id: str) -> Path:
+        part_dir = output_dir / task_id
+        if part_dir.exists() and part_dir.is_dir():
+            shutil.rmtree(part_dir, ignore_errors=True)
+
+        part_dir.mkdir(parents=True, exist_ok=True)
+        marker = part_dir / PART_DIR_MARKER_FILE
+        marker.write_text("video-downloader-part-dir\n", encoding="utf-8")
+        return part_dir
+
     def _cleanup_task_cache_files(self, task: TaskState) -> None:
         output_dir = Path(task.output_dir)
-        cache_dir = Path(task.cache_dir) if task.cache_dir else (output_dir / ".task_cache" / task.id)
+        cache_dir = Path(task.part_dir or task.cache_dir) if (task.part_dir or task.cache_dir) else (output_dir / task.id)
 
         # Delete task-local yt-dlp cache/temp directory.
         if cache_dir.exists():
@@ -241,6 +278,28 @@ class DownloadTaskManager:
                 if any(token in path.name for token in (".part", ".ytdl", ".aria2", ".temp", ".frag")):
                     with contextlib.suppress(Exception):
                         path.unlink(missing_ok=True)
+
+    async def cleanup_non_running_part_dirs(self) -> tuple[list[str], list[str]]:
+        output_dir = self._settings.get_download_root_path()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        async with self._tasks_lock:
+            running_task_ids = [task.id for task in self._tasks.values() if task.status == TaskStatus.running]
+
+        deleted_dirs: list[str] = []
+        keep_set = set(running_task_ids)
+
+        for path in output_dir.iterdir():
+            if not path.is_dir():
+                continue
+            if not (path / PART_DIR_MARKER_FILE).exists():
+                continue
+            if path.name in keep_set:
+                continue
+            shutil.rmtree(path, ignore_errors=True)
+            deleted_dirs.append(str(path.resolve()))
+
+        return deleted_dirs, running_task_ids
 
     def subscribe(self, task_id: Optional[str] = None) -> asyncio.Queue[TaskEvent]:
         queue: asyncio.Queue[TaskEvent] = asyncio.Queue(maxsize=200)
@@ -265,12 +324,14 @@ class DownloadTaskManager:
 
         async with self._semaphore:
             if task.cancel_requested:
+                self._cleanup_task_cache_files(task)
                 self._set_terminal_status(task, TaskStatus.cancelled, "任务已取消")
                 await self._emit("task.cancelled", task)
                 return
 
             task.status = TaskStatus.running
             task.message = "任务执行中"
+            task.progress_text = ""
             task.updated_at = _utcnow()
             await self._emit("task.running", task)
 
@@ -293,6 +354,7 @@ class DownloadTaskManager:
                         item_index=index,
                         video=video,
                         output_dir=Path(task.output_dir),
+                        work_dir=Path(task.part_dir) if task.part_dir else None,
                         cache_dir=Path(task.cache_dir) if task.cache_dir else None,
                         should_cancel=lambda: task.cancel_requested,
                         emit_progress=lambda payload: self._on_item_progress(task, item, payload),
@@ -339,6 +401,7 @@ class DownloadTaskManager:
                 )
                 await self._emit("task.failed", task)
             else:
+                self._cleanup_task_cache_files(task)
                 self._set_terminal_status(task, TaskStatus.success, f"任务完成，共 {task.success} 个视频")
                 await self._emit("task.completed", task)
 
@@ -356,6 +419,7 @@ class DownloadTaskManager:
 
         task.speed = str(payload.get("speed") or "")
         task.eta = str(payload.get("eta") or "")
+        task.progress_text = str(payload.get("progressText") or "")
         task.progress = self._compute_overall_progress(task)
         task.updated_at = _utcnow()
 
@@ -371,6 +435,9 @@ class DownloadTaskManager:
     def _set_terminal_status(self, task: TaskState, status: TaskStatus, message: str) -> None:
         task.status = status
         task.progress = 1.0 if status in {TaskStatus.success, TaskStatus.failed} else task.progress
+        if status in {TaskStatus.success, TaskStatus.failed, TaskStatus.cancelled}:
+            task.speed = ""
+            task.eta = ""
         task.message = message
         task.updated_at = _utcnow()
 

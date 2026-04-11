@@ -51,6 +51,7 @@ class TaskView(BaseModel):
     success: int
     failed: int
     progress: float
+    progressText: str = ""
     speed: str = ""
     eta: str = ""
     message: str = ""
@@ -91,6 +92,12 @@ class OpenDirectoryResponse(BaseModel):
     opened: bool
     path: str
     message: str
+
+
+class CleanupPartDirsResponse(BaseModel):
+    deletedCount: int
+    deletedDirs: list[str] = Field(default_factory=list)
+    runningTaskIds: list[str] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

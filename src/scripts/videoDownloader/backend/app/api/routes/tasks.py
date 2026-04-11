@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 
 from app.api.deps import get_task_manager
 from app.core.models import (
+    CleanupPartDirsResponse,
     OpenDirectoryRequest,
     OpenDirectoryResponse,
     TaskCancelResponse,
@@ -104,6 +105,18 @@ async def cancel_task(
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
     return TaskCancelResponse(taskId=task.id, status=task.status, message=task.message)
+
+
+@router.post("/cleanup-part-dirs", response_model=CleanupPartDirsResponse)
+async def cleanup_part_dirs(
+    manager: DownloadTaskManager = Depends(get_task_manager),
+) -> CleanupPartDirsResponse:
+    deleted_dirs, running_task_ids = await manager.cleanup_non_running_part_dirs()
+    return CleanupPartDirsResponse(
+        deletedCount=len(deleted_dirs),
+        deletedDirs=deleted_dirs,
+        runningTaskIds=running_task_ids,
+    )
 
 
 @router.websocket("/ws")

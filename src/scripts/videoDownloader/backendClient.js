@@ -106,6 +106,16 @@ export class VideoBackendClient {
     return response.data;
   }
 
+  async cleanupPartDirs() {
+    const response = await request(this.buildUrl('/api/video/tasks/cleanup-part-dirs'), {
+      method: 'POST',
+      timeout: this.timeout,
+      dataType: 'json',
+    });
+
+    return response.data;
+  }
+
   connectTaskStream({ taskId = '', onOpen, onMessage, onClose, onError }) {
     const wsBase = this.getWsUrl();
     const endpoint = `${wsBase}/api/video/tasks/ws`;
