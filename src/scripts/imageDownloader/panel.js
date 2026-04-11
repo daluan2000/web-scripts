@@ -29,6 +29,13 @@ export function createPanel() {
         下载选中
       </button>
       <button class="id-btn id-btn-warning" id="id-clear-storage">清除存储</button>
+      <label
+        class="id-switch-label"
+        title="清晰下载速度更慢，体积更大"
+      >
+        <input type="checkbox" id="id-gif-quality-toggle" checked />
+        动图清晰模式
+      </label>
       <div class="id-toolbar-spacer"></div>
       <label class="id-prefix-label">
         文件前缀:

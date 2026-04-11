@@ -45,6 +45,11 @@ function applyRatioPosition(button) {
  * @param {Function} options.onToggle - 切换面板回调
  */
 export function initFloatingButton(options) {
+  const existing = document.getElementById('id-floating-btn');
+  if (existing) {
+    return existing;
+  }
+
   const button = createElement('div', {
     id: 'id-floating-btn',
     title: '图片批量下载器',
@@ -75,6 +80,8 @@ export function initFloatingButton(options) {
   window.addEventListener('resize', () => {
     applyRatioPosition(button);
   });
+
+  return button;
 }
 
 /**

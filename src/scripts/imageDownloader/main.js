@@ -3,6 +3,14 @@ import { config } from '@/shared/config.js';
 import { logger } from '@/shared/logger.js';
 import { getItem, setItem } from '@/shared/storage.js';
 
+function isTopWindow() {
+  try {
+    return window.top === window.self;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 图片批量下载器 - Tampermonkey 脚本
  * 功能：捕获页面图片，支持批量下载
@@ -14,6 +22,7 @@ export const USERSCRIPT_HEADER = `// @name         Image Downloader
 // @description  图片批量下载器 - 捕获页面图片并支持批量下载
 // @match        https://*/*
 // @match        http://*/*
+// @noframes
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -21,7 +30,9 @@ export const USERSCRIPT_HEADER = `// @name         Image Downloader
 
 // 注入样式
 import styles from '@/scripts/imageDownloader/styles.css?raw';
-addStyle(styles);
+if (isTopWindow()) {
+  addStyle(styles);
+}
 
 // 加载各个模块
 import { initFloatingButton, showPanel, hidePanel, togglePanel } from '@/scripts/imageDownloader/floatingButton.js';
@@ -34,9 +45,20 @@ import { getActiveEnhancerName, getEnhancerDisplayName } from '@/scripts/imageDo
 const SHORTCUT_KEY = 'i'; // 默认使用 Ctrl+Shift+I 触发
 const DOWNLOADED_HISTORY_KEY =
   config.imageDownloader?.storageKeys?.downloadHistory || 'imageDownloader_download_history';
+const GIF_QUALITY_MODE_KEY =
+  config.imageDownloader?.storageKeys?.gifQualityMode || 'imageDownloader_gif_quality_mode';
+
+function normalizeGifQualityMode(mode) {
+  return mode === 'low' ? 'low' : 'high';
+}
 
 (function () {
   'use strict';
+
+  // 仅在顶层窗口初始化，避免 iframe 页面出现重复窗口
+  if (!isTopWindow()) {
+    return;
+  }
 
   // 防止重复加载
   if (window.__imageDownloaderInitialized) {
@@ -48,6 +70,7 @@ const DOWNLOADED_HISTORY_KEY =
   let currentImages = [];
   let selectedImages = [];
   const downloadHistory = [];
+  let useHighQualityGif = true;
   let shortcutEnabled = true;
 
   function updateDownloadedCount(downloadedCountText) {
@@ -168,10 +191,36 @@ const DOWNLOADED_HISTORY_KEY =
   const clearStorageBtn = panel.querySelector('#id-clear-storage');
   const captureBtn = panel.querySelector('#id-capture');
   const prefixInput = panel.querySelector('#id-prefix');
+  const gifQualityToggle = panel.querySelector('#id-gif-quality-toggle');
   const statusText = panel.querySelector('.id-status');
   const downloadedCountText = panel.querySelector('#id-downloaded-count');
 
   await loadDownloadHistory(downloadedCountText);
+
+  try {
+    const storedMode = normalizeGifQualityMode(await getItem(GIF_QUALITY_MODE_KEY, 'high'));
+    useHighQualityGif = storedMode !== 'low';
+  } catch (error) {
+    logger.warn('读取 GIF 画质模式失败，使用默认清晰模式', error);
+    useHighQualityGif = true;
+  }
+
+  if (gifQualityToggle) {
+    gifQualityToggle.checked = useHighQualityGif;
+    gifQualityToggle.addEventListener('change', async () => {
+      useHighQualityGif = Boolean(gifQualityToggle.checked);
+
+      try {
+        await setItem(GIF_QUALITY_MODE_KEY, useHighQualityGif ? 'high' : 'low');
+      } catch (error) {
+        logger.warn('保存 GIF 画质模式失败', error);
+      }
+
+      statusText.textContent = useHighQualityGif
+        ? '动态图画质：清晰（更慢、更大）'
+        : '动态图画质：标准（更快、更小）';
+    });
+  }
 
   // 初始化图片选择器
   const imageSelector = new ImageSelector({
@@ -239,6 +288,7 @@ const DOWNLOADED_HISTORY_KEY =
 
     const downloader = new BatchDownloader({
       prefix,
+      animatedGifHighQuality: useHighQualityGif,
       onProgress: (current, total) => {
         statusText.textContent = `下载中: ${current}/${total}`;
       },

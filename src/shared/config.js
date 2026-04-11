@@ -21,6 +21,7 @@ export const config = {
   imageDownloader: {
     storageKeys: {
       downloadHistory: 'imageDownloader_download_history',
+      gifQualityMode: 'imageDownloader_gif_quality_mode',
     },
   },
 
