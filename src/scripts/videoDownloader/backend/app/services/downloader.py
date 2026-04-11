@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import shutil
@@ -30,6 +31,45 @@ DIRECT_DOWNLOAD_EXTENSIONS = {
 }
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+
+def _should_suppress_cancel_error(message: str, should_cancel: Callable[[], bool]) -> bool:
+    if not should_cancel():
+        return False
+
+    text = str(message or "").lower()
+    if not text:
+        return False
+
+    return (
+        "unable to open for writing" in text
+        or "unable to rename file" in text
+        or "no such file or directory" in text
+        or "frag" in text
+        or "fragment" in text
+    )
+
+
+class _YtDlpLogger:
+    def __init__(self, should_cancel: Callable[[], bool]):
+        self._should_cancel = should_cancel
+
+    def debug(self, message: str) -> None:
+        # Keep debug logs quiet by default; caller can raise log level when needed.
+        logger.debug("yt-dlp: %s", message)
+
+    def warning(self, message: str) -> None:
+        if _should_suppress_cancel_error(message, self._should_cancel):
+            return
+        logger.warning("yt-dlp: %s", message)
+
+    def error(self, message: str) -> None:
+        if _should_suppress_cancel_error(message, self._should_cancel):
+            return
+        logger.error("yt-dlp: %s", message)
+
+    def info(self, message: str) -> None:
+        logger.info("yt-dlp: %s", message)
 
 
 def _format_bytes_iec(value: float) -> str:
@@ -129,6 +169,7 @@ class YtDlpDownloader:
         base_retries = max(1, int(self._settings.yt_dlp_retries or 3))
 
         direct_attempted = False
+        ydl_logger = _YtDlpLogger(should_cancel)
 
         def progress_hook(progress_data: dict) -> None:
             nonlocal final_filename
@@ -201,6 +242,7 @@ class YtDlpDownloader:
                 self._build_ydl_options(
                     outtmpl=outtmpl,
                     progress_hook=progress_hook,
+                    ydl_logger=ydl_logger,
                     request_headers=request_headers,
                     socket_timeout=base_timeout,
                     retries=base_retries,
@@ -238,6 +280,7 @@ class YtDlpDownloader:
                     self._build_ydl_options(
                         outtmpl=outtmpl,
                         progress_hook=progress_hook,
+                        ydl_logger=ydl_logger,
                         request_headers=request_headers,
                         socket_timeout=retry_timeout,
                         retries=retry_retries,
@@ -296,6 +339,11 @@ class YtDlpDownloader:
         if source_path is None:
             raise yt_dlp.utils.DownloadError("下载已完成但未找到输出文件")
 
+        if should_cancel():
+            with contextlib.suppress(Exception):
+                source_path.unlink(missing_ok=True)
+            raise yt_dlp.utils.DownloadError("Task cancelled by user")
+
         destination_path = output_dir / source_path.name
         if source_path.resolve() != destination_path.resolve():
             if destination_path.exists():
@@ -353,6 +401,7 @@ class YtDlpDownloader:
         *,
         outtmpl: str,
         progress_hook: Callable[[dict], None],
+        ydl_logger: _YtDlpLogger,
         request_headers: dict[str, str],
         socket_timeout: int,
         retries: int,
@@ -368,6 +417,7 @@ class YtDlpDownloader:
             "socket_timeout": socket_timeout,
             "outtmpl": outtmpl,
             "progress_hooks": [progress_hook],
+            "logger": ydl_logger,
             "concurrent_fragment_downloads": 2,
             "force_ipv4": True,
             "nocheckcertificate": False,

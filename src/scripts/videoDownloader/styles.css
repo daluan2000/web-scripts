@@ -333,6 +333,11 @@
   background: #dbeafe;
 }
 
+.vd-task-status.cancelling {
+  color: #9a3412;
+  background: #fef3c7;
+}
+
 .vd-task-status.success {
   color: #166534;
   background: #dcfce7;
@@ -396,6 +401,17 @@
 
 .vd-task-cancel:hover {
   background: #ffedd5;
+}
+
+.vd-task-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.vd-task-cancel.is-processing {
+  border-color: #d97706;
+  background: #fef3c7;
+  color: #9a3412;
 }
 
 .vd-task-open {

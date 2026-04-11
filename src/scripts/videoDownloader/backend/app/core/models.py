@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class TaskStatus(str, Enum):
     queued = "queued"
     running = "running"
+    cancelling = "cancelling"
     success = "success"
     failed = "failed"
     cancelled = "cancelled"
@@ -55,6 +56,7 @@ class TaskView(BaseModel):
     speed: str = ""
     eta: str = ""
     message: str = ""
+    cancelRequested: bool = False
     outputDir: str
     error: str = ""
     items: list[TaskItemView] = Field(default_factory=list)
@@ -77,6 +79,8 @@ class TaskCreateResponse(BaseModel):
 class TaskCancelResponse(BaseModel):
     taskId: str
     status: TaskStatus
+    cancelRequested: bool = False
+    cancelled: bool = False
     message: str
 
 

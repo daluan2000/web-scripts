@@ -50,6 +50,7 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
   let selectedVideos = [];
   const downloadHistory = [];
   const taskMap = new Map();
+  const pendingCancelTaskIds = new Set();
   const historyRecordedTaskIds = new Set();
   const taskPollers = new Map();
   const handledCaptureRequestIds = new Set();
@@ -126,6 +127,8 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
         return '排队中';
       case 'running':
         return '执行中';
+      case 'cancelling':
+        return '取消中';
       case 'success':
         return '已完成';
       case 'failed':
@@ -139,6 +142,10 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
   function getTaskProgressText(task) {
     if (!task) return '等待后端更新状态';
+
+    if (task.status === 'cancelling' || task.cancelRequested) {
+      return task.message || '正在停止下载并清理临时文件...';
+    }
 
     const rawLine = String(task.progressText || '').trim();
     if (task.status === 'running' && rawLine) {
@@ -154,6 +161,11 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
     }
 
     return '等待后端进度输出...';
+  }
+
+  function isTaskCancellationInProgress(task) {
+    if (!task || !task.id) return false;
+    return pendingCancelTaskIds.has(task.id) || task.status === 'cancelling' || Boolean(task.cancelRequested);
   }
 
   function updateTaskHistory(task, downloadedCountText) {
@@ -257,7 +269,15 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
         cancelBtn.className = 'vd-task-cancel';
         cancelBtn.dataset.action = 'cancel-task';
         cancelBtn.dataset.taskId = task.id;
-        cancelBtn.textContent = '取消任务';
+
+        if (isTaskCancellationInProgress(task)) {
+          cancelBtn.disabled = true;
+          cancelBtn.classList.add('is-processing');
+          cancelBtn.textContent = '取消执行中...';
+        } else {
+          cancelBtn.textContent = '取消任务';
+        }
+
         actions.appendChild(cancelBtn);
       }
 
@@ -272,6 +292,7 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
   function upsertTask(task, taskListEl, downloadedCountText) {
     if (!task || !task.id) return;
     taskMap.set(task.id, task);
+    pendingCancelTaskIds.delete(task.id);
     if (TERMINAL_STATUSES.has(task.status)) {
       stopTaskPolling(task.id);
     }
@@ -356,6 +377,7 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
       const staleTask = taskMap.get(taskId);
       if (staleTask && !TERMINAL_STATUSES.has(staleTask.status)) {
+        pendingCancelTaskIds.delete(taskId);
         taskMap.set(taskId, {
           ...staleTask,
           status: 'failed',
@@ -819,38 +841,43 @@ const FRAME_CAPTURE_TIMEOUT_MS = 1200;
 
       if (action !== 'cancel-task') return;
 
-      const cancelBtn = target;
-      const previousText = cancelBtn.textContent;
-      cancelBtn.disabled = true;
-      cancelBtn.textContent = '取消中...';
+      const currentTask = taskMap.get(taskId);
+      if (currentTask && isTaskCancellationInProgress(currentTask)) {
+        setStatusText(statusText, `任务 ${taskId} 的取消正在执行中，请稍候`);
+        return;
+      }
+
+      pendingCancelTaskIds.add(taskId);
+      renderTaskList(taskListEl);
       setStatusText(statusText, `任务 ${taskId} 正在取消...`);
 
       try {
         const result = await backendClient.cancelTask(taskId);
-        setStatusText(statusText, `任务 ${taskId}: ${result?.message || '已发送取消请求'}`);
+        const cancelled = Boolean(result?.cancelled) || result?.status === 'cancelled';
+        const fallbackMessage = cancelled ? '任务已取消' : '取消请求已发送，等待后端完成';
+        setStatusText(statusText, `任务 ${taskId}: ${result?.message || fallbackMessage}`);
+
+        if (!wsConnected) {
+          try {
+            const latestTask = await backendClient.getTask(taskId);
+            upsertTask(latestTask, taskListEl, downloadedCountText);
+          } catch (refreshSingleError) {
+            logger.warn('取消后刷新单任务状态失败', { taskId, error: refreshSingleError });
+          }
+        }
+      } catch (error) {
+        logger.error('取消任务失败', error);
+        setStatusText(statusText, `取消任务失败: ${error?.message || '未知错误'}`);
 
         try {
           const latestTask = await backendClient.getTask(taskId);
           upsertTask(latestTask, taskListEl, downloadedCountText);
         } catch (refreshSingleError) {
-          logger.warn('刷新单任务状态失败', { taskId, error: refreshSingleError });
+          logger.warn('取消失败后刷新单任务状态失败', { taskId, error: refreshSingleError });
         }
-
-        try {
-          await refreshTaskList(taskListEl, downloadedCountText);
-        } catch (refreshListError) {
-          logger.warn('取消后刷新任务列表失败', refreshListError);
-        }
-      } catch (error) {
-        logger.error('取消任务失败', error);
-        setStatusText(statusText, `取消任务失败: ${error?.message || '未知错误'}`);
       } finally {
-        const currentTask = taskMap.get(taskId);
-        const isTerminal = currentTask ? TERMINAL_STATUSES.has(currentTask.status) : false;
-        if (!isTerminal) {
-          cancelBtn.disabled = false;
-          cancelBtn.textContent = previousText;
-        }
+        pendingCancelTaskIds.delete(taskId);
+        renderTaskList(taskListEl);
       }
     });
 

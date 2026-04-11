@@ -24,6 +24,10 @@ TERMINAL_STATUSES = {TaskStatus.success, TaskStatus.failed, TaskStatus.cancelled
 PART_DIR_MARKER_FILE = ".vd_part_dir"
 
 
+class TaskCancellationTimeoutError(RuntimeError):
+    """Raised when cancellation does not complete within the configured timeout."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -107,6 +111,7 @@ class TaskState:
             speed=self.speed,
             eta=self.eta,
             message=self.message,
+            cancelRequested=self.cancel_requested,
             outputDir=self.output_dir,
             error=self.error,
             items=[item.to_view() for item in self.items],
@@ -223,10 +228,7 @@ class DownloadTaskManager:
 
         if task.status == TaskStatus.queued:
             task.cancel_requested = True
-            for item in task.items:
-                if item.status in {TaskStatus.queued, TaskStatus.running}:
-                    item.status = TaskStatus.cancelled
-                    item.error = "任务已取消"
+            self._mark_items_cancelled(task)
 
             # For queued tasks we can clean temp files immediately.
             self._cleanup_task_cache_files(task)
@@ -241,14 +243,57 @@ class DownloadTaskManager:
             return task
 
         task.cancel_requested = True
-        for item in task.items:
-            if item.status in {TaskStatus.queued, TaskStatus.running}:
-                item.status = TaskStatus.cancelled
-                item.error = "任务已取消"
+        self._mark_items_cancelled(task)
+
+        if task.status != TaskStatus.cancelling:
+            task.status = TaskStatus.cancelling
+
         task.message = "已收到取消请求，正在停止任务并清理临时文件"
+        task.error = ""
         task.updated_at = _utcnow()
         await self._emit("task.cancelling", task)
+
+        # Proactively cancel the runner task so API cancellation does not depend
+        # on downloader progress callbacks to resume control flow.
+        if task.runner and not task.runner.done():
+            task.runner.cancel()
+
+        timeout_seconds = max(1, int(self._settings.cancel_wait_seconds or 1))
+        try:
+            await self._wait_for_runner_stop(task, timeout_seconds=float(timeout_seconds))
+        except asyncio.TimeoutError as error:
+            task.status = TaskStatus.cancelling
+            task.message = f"取消超时（{timeout_seconds}s），任务仍在停止中"
+            task.error = task.message
+            task.updated_at = _utcnow()
+            await self._emit("task.cancelling", task)
+            raise TaskCancellationTimeoutError(task.message) from error
+
+        self._cleanup_task_cache_files(task)
+        self._set_terminal_status(task, TaskStatus.cancelled, "任务已取消")
+        await self._emit("task.cancelled", task)
         return task
+
+    def _mark_items_cancelled(self, task: TaskState) -> None:
+        for item in task.items:
+            if item.status in {TaskStatus.queued, TaskStatus.running, TaskStatus.cancelling}:
+                item.status = TaskStatus.cancelled
+                item.error = "任务已取消"
+
+    async def _wait_for_runner_stop(self, task: TaskState, timeout_seconds: float) -> None:
+        runner = task.runner
+        if not runner:
+            return
+        if runner.done():
+            with contextlib.suppress(asyncio.CancelledError):
+                await runner
+            return
+
+        try:
+            await asyncio.wait_for(asyncio.shield(runner), timeout=timeout_seconds)
+        except asyncio.CancelledError:
+            # Expected when runner is actively cancelled during task cancellation.
+            return
 
     def _prepare_task_part_dir(self, output_dir: Path, task_id: str) -> Path:
         part_dir = output_dir / task_id
@@ -284,7 +329,11 @@ class DownloadTaskManager:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         async with self._tasks_lock:
-            running_task_ids = [task.id for task in self._tasks.values() if task.status == TaskStatus.running]
+            running_task_ids = [
+                task.id
+                for task in self._tasks.values()
+                if task.status in {TaskStatus.running, TaskStatus.cancelling}
+            ]
 
         deleted_dirs: list[str] = []
         keep_set = set(running_task_ids)
@@ -356,7 +405,8 @@ class DownloadTaskManager:
                         output_dir=Path(task.output_dir),
                         work_dir=Path(task.part_dir) if task.part_dir else None,
                         cache_dir=Path(task.cache_dir) if task.cache_dir else None,
-                        should_cancel=lambda: task.cancel_requested,
+                        should_cancel=lambda: task.cancel_requested
+                        or task.status in {TaskStatus.cancelling, TaskStatus.cancelled},
                         emit_progress=lambda payload: self._on_item_progress(task, item, payload),
                     )
                     if task.cancel_requested:
@@ -436,6 +486,7 @@ class DownloadTaskManager:
         task.status = status
         task.progress = 1.0 if status in {TaskStatus.success, TaskStatus.failed} else task.progress
         if status in {TaskStatus.success, TaskStatus.failed, TaskStatus.cancelled}:
+            task.cancel_requested = False
             task.speed = ""
             task.eta = ""
         task.message = message

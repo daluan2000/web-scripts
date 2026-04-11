@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     yt_dlp_socket_timeout: int = 60
     yt_dlp_retries: int = 5
+    cancel_wait_seconds: int = 12
 
     log_level: str = "INFO"
 

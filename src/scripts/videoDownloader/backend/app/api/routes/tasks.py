@@ -15,9 +15,10 @@ from app.core.models import (
     TaskCreateRequest,
     TaskCreateResponse,
     TaskListResponse,
+    TaskStatus,
     TaskView,
 )
-from app.services.task_manager import DownloadTaskManager
+from app.services.task_manager import DownloadTaskManager, TaskCancellationTimeoutError
 
 router = APIRouter(prefix="/api/video/tasks", tags=["video-tasks"])
 
@@ -101,10 +102,20 @@ async def cancel_task(
     task_id: str,
     manager: DownloadTaskManager = Depends(get_task_manager),
 ) -> TaskCancelResponse:
-    task = await manager.cancel_task(task_id)
+    try:
+        task = await manager.cancel_task(task_id)
+    except TaskCancellationTimeoutError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
-    return TaskCancelResponse(taskId=task.id, status=task.status, message=task.message)
+    return TaskCancelResponse(
+        taskId=task.id,
+        status=task.status,
+        cancelRequested=task.cancel_requested,
+        cancelled=task.status == TaskStatus.cancelled,
+        message=task.message,
+    )
 
 
 @router.post("/cleanup-part-dirs", response_model=CleanupPartDirsResponse)
