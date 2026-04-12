@@ -370,7 +370,7 @@ export class BatchDownloader {
             alphaThreshold: 16,
           },
         );
-        const delay = this.toGifDelay(frame.duration);
+        const delay = this.toGifDelayMs(frame.duration);
 
         const frameOptions = {
           delay,
@@ -466,7 +466,7 @@ export class BatchDownloader {
         palette.unshift([0, 0, 0, 0]);
 
         const index = applyPalette(imageData, palette, 'rgba4444');
-        const delay = Math.max(20, Math.round((frame.duration || 100000) / 1000));
+        const delay = this.toGifDelayMs(frame.duration);
 
         gif.writeFrame(index, frameCanvas.width, frameCanvas.height, {
           palette,
@@ -696,13 +696,15 @@ export class BatchDownloader {
   }
 
   /**
-   * 将 WebP 帧时长（微秒）转换为 GIF delay（1/100 秒）
+   * 将 WebP 帧时长（微秒）转换为 gifenc 期望的帧延迟（毫秒）
+   * WebP frame.duration 单位是微秒，gifenc writeFrame.delay 单位是毫秒。
    * @param {number} durationUs
    * @returns {number}
    */
-  toGifDelay(durationUs) {
+  toGifDelayMs(durationUs) {
     const safeDuration = Number.isFinite(durationUs) && durationUs > 0 ? durationUs : 100000;
-    return Math.max(2, Math.round(safeDuration / 10000));
+    const delayMs = Math.round(safeDuration / 1000);
+    return Math.max(20, delayMs);
   }
 
   /**
