@@ -5,12 +5,6 @@
 import { enhanceImageUrl } from './imageEnhancers.js';
 
 export class ImageCapture {
-  constructor() {
-    this.imageExtensions = [
-      'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif', 'awebp'
-    ];
-  }
-
   /**
    * 获取当前页面所有图片
    * @returns {Array} 图片列表
@@ -90,7 +84,8 @@ export class ImageCapture {
       }
     });
 
-    // 过滤无效图片
+    // 所有站点统一采用“最小有效性”过滤：
+    // 不按域名或路径后缀做白名单判定，只排除明显无效链接。
     return images.filter((img) => this.isValidImage(img.src));
   }
 
@@ -208,32 +203,40 @@ export class ImageCapture {
    * @returns {boolean}
    */
   isValidImage(src) {
-    if (!src) return false;
+    if (!src || typeof src !== 'string') return false;
 
-    // 检查是否是常见图片扩展名
-    const ext = src.split('.').pop()?.toLowerCase().split('?')[0];
-    if (ext && this.imageExtensions.includes(ext)) {
-      return true;
-    }
+    const value = src.trim();
+    if (!value) return false;
 
-    // 检查是否是 picsum、unsplash 等图库服务
+    const lowerValue = value.toLowerCase();
+
+    // 明确排除非资源协议
     if (
-      src.includes('picsum.photos') ||
-      src.includes('unsplash.com') ||
-      src.includes('placeholder.com') ||
-      src.includes('via.placeholder')
+      lowerValue.startsWith('javascript:') ||
+      lowerValue.startsWith('vbscript:') ||
+      lowerValue.startsWith('mailto:') ||
+      lowerValue.startsWith('tel:')
     ) {
+      return false;
+    }
+
+    // data URL 仅保留 image 类型
+    if (lowerValue.startsWith('data:')) {
+      return lowerValue.startsWith('data:image/');
+    }
+
+    // blob URL 由页面上下文生成，按有效图片处理
+    if (lowerValue.startsWith('blob:')) {
       return true;
     }
 
-    // 检查是否是字节/火山引擎等国内 CDN
-    const cdnPatterns = [
-      'cdn.', 'img.', 'image.', 'assets.',
-      'byteimg.com', 'bytedance.com', 'toutiao.com',
-      'douyin.com', 'toutiaoimg.com', 'feishu.cn',
-      '.jpg', '.png', '.webp', '.gif', '.svg', '.bmp', '.awebp', '.avif'
-    ];
-    return cdnPatterns.some((pattern) => src.toLowerCase().includes(pattern));
+    // 仅校验资源协议，不按域名/后缀做过滤
+    try {
+      const parsed = new URL(value, window.location.href);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   /**

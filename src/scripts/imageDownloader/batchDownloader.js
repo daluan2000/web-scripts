@@ -133,8 +133,10 @@ export class BatchDownloader {
    * @returns {Promise<{blob: Blob, filename: string}>}
    */
   async prepareDownloadTarget(url, blob, filename, contentType = '') {
+    const normalizedFilename = await this.normalizeFilenameByContentType(filename, contentType, blob);
+
     if (!this.isWebpResource(url, contentType)) {
-      return { blob, filename };
+      return { blob, filename: normalizedFilename };
     }
 
     const animated = await this.isAnimatedWebp(blob);
@@ -146,14 +148,14 @@ export class BatchDownloader {
       if (gifBlob) {
         return {
           blob: gifBlob,
-          filename: this.replaceExtension(filename, 'gif'),
+          filename: this.replaceExtension(normalizedFilename, 'gif'),
         };
       }
 
       logger.warn('动态 WebP 转 GIF 失败，回退为原始 WebP 下载');
       return {
         blob,
-        filename: this.replaceExtension(filename, 'webp'),
+        filename: this.replaceExtension(normalizedFilename, 'webp'),
       };
     }
 
@@ -161,15 +163,104 @@ export class BatchDownloader {
     if (pngBlob) {
       return {
         blob: pngBlob,
-        filename: this.replaceExtension(filename, 'png'),
+        filename: this.replaceExtension(normalizedFilename, 'png'),
       };
     }
 
     logger.warn('静态 WebP 转 PNG 失败，回退为原始 WebP 下载');
     return {
       blob,
-      filename: this.replaceExtension(filename, 'webp'),
+      filename: this.replaceExtension(normalizedFilename, 'webp'),
     };
+  }
+
+  /**
+   * 根据响应 MIME 与文件头修正文件名后缀
+   * @param {string} filename
+   * @param {string} contentType
+   * @param {Blob} blob
+   * @returns {Promise<string>}
+   */
+  async normalizeFilenameByContentType(filename, contentType = '', blob) {
+    const mimeExt = this.mimeToExt(contentType);
+    if (mimeExt) {
+      return this.replaceExtension(filename, mimeExt);
+    }
+
+    const signatureExt = await this.detectImageExtFromBlob(blob);
+    if (signatureExt) {
+      return this.replaceExtension(filename, signatureExt);
+    }
+
+    return filename;
+  }
+
+  /**
+   * 通过文件签名识别常见图片类型
+   * @param {Blob} blob
+   * @returns {Promise<string|null>}
+   */
+  async detectImageExtFromBlob(blob) {
+    if (!blob || typeof blob.arrayBuffer !== 'function') {
+      return null;
+    }
+
+    try {
+      const bytes = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+      if (bytes.length < 4) {
+        return null;
+      }
+
+      // GIF87a / GIF89a
+      if (
+        bytes[0] === 0x47 &&
+        bytes[1] === 0x49 &&
+        bytes[2] === 0x46 &&
+        bytes[3] === 0x38
+      ) {
+        return 'gif';
+      }
+
+      // PNG signature
+      if (
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x4e &&
+        bytes[3] === 0x47
+      ) {
+        return 'png';
+      }
+
+      // JPEG signature
+      if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+        return 'jpg';
+      }
+
+      // BMP signature
+      if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
+        return 'bmp';
+      }
+
+      // WEBP RIFF....WEBP
+      if (
+        bytes.length >= 12 &&
+        bytes[0] === 0x52 &&
+        bytes[1] === 0x49 &&
+        bytes[2] === 0x46 &&
+        bytes[3] === 0x46 &&
+        bytes[8] === 0x57 &&
+        bytes[9] === 0x45 &&
+        bytes[10] === 0x42 &&
+        bytes[11] === 0x50
+      ) {
+        return 'webp';
+      }
+
+      return null;
+    } catch (error) {
+      logger.debug('文件签名识别失败:', error);
+      return null;
+    }
   }
 
   /**
@@ -888,6 +979,8 @@ export class BatchDownloader {
    * @returns {string}
    */
   mimeToExt(mime) {
+    const normalized = String(mime || '').toLowerCase().split(';')[0].trim();
+
     const map = {
       'image/png': 'png',
       'image/jpeg': 'jpg',
@@ -898,6 +991,6 @@ export class BatchDownloader {
       'image/svg+xml': 'svg',
       'image/avif': 'avif',
     };
-    return map[mime] || 'jpg';
+    return map[normalized] || null;
   }
 }
