@@ -94,8 +94,6 @@ export class BatchDownloader {
    * @returns {Promise<void>}
    */
   async downloadFile(url, filename) {
-    const isDataUrl = url.startsWith('data:');
-
     // 统一通过 fetch 拿 blob，以便在下载前做格式转换
     try {
       const response = await fetch(url);
@@ -106,21 +104,10 @@ export class BatchDownloader {
       const blob = await response.blob();
       const contentType = response.headers.get('content-type') || blob.type || '';
       const downloadTarget = await this.prepareDownloadTarget(url, blob, filename, contentType);
-      const blobUrl = URL.createObjectURL(downloadTarget.blob);
-      this.triggerDownload(blobUrl, downloadTarget.filename);
-
-      // 清理 blob URL
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      await this.downloadViaGM(downloadTarget.blob, downloadTarget.filename);
     } catch (error) {
-      // 如果 fetch 失败，非 data URL 尝试直接下载（跨域限制）
-      if (!isDataUrl) {
-        logger.warn(`fetch 下载失败，尝试直接下载: ${url}`);
-        this.triggerDownload(url, filename);
-        return;
-      }
-
-      // data URL fetch 失败时，退回直接下载
-      this.downloadDataURL(url, filename);
+      logger.warn(`fetch 下载失败，直接使用 GM_download: ${url}`);
+      await this.downloadViaGM(url, filename);
     }
   }
 
@@ -584,6 +571,42 @@ export class BatchDownloader {
   }
 
   /**
+   * 通过 GM_download 执行下载
+   * @param {Blob|string} source - blob 或可下载 URL
+   * @param {string} filename - 文件名
+   * @returns {Promise<void>}
+   */
+  async downloadViaGM(source, filename) {
+    if (typeof GM_download !== 'function') {
+      throw new Error('当前环境不支持 GM_download');
+    }
+
+    let objectUrl = null;
+    const downloadUrl = typeof source === 'string' ? source : URL.createObjectURL(source);
+
+    if (typeof source !== 'string') {
+      objectUrl = downloadUrl;
+    }
+
+    try {
+      await new Promise((resolve, reject) => {
+        GM_download({
+          url: downloadUrl,
+          name: filename,
+          saveAs: false,
+          onload: () => resolve(),
+          onerror: (error) => reject(error || new Error('GM_download 失败')),
+          ontimeout: () => reject(new Error('GM_download 超时')),
+        });
+      });
+    } finally {
+      if (objectUrl) {
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      }
+    }
+  }
+
+  /**
    * 生成全局调色板，减少帧间色表抖动导致的闪烁
    * @param {{decoder: ImageDecoder, frameCount: number, width: number, height: number}} options
     * @returns {Promise<{palette: Array<Array<number>>, paletteFormat: string, hasTransparency: boolean}|null>}
@@ -893,30 +916,6 @@ export class BatchDownloader {
     }
 
     return `${baseName.slice(0, lastDot)}.${normalizedExt}`;
-  }
-
-  /**
-   * 触发下载
-   * @param {string} url - 文件 URL 或 blob URL
-   * @param {string} filename - 文件名
-   */
-  triggerDownload(url, filename) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-
-  /**
-   * 下载 Data URL
-   * @param {string} dataUrl - data URL
-   * @param {string} filename - 文件名
-   */
-  downloadDataURL(dataUrl, filename) {
-    this.triggerDownload(dataUrl, filename);
   }
 
   /**

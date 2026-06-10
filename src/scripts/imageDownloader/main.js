@@ -26,7 +26,8 @@ export const USERSCRIPT_HEADER = `// @name         Image Downloader
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @grant        GM_listValues`;
+// @grant        GM_listValues
+// @grant        GM_download`;
 
 // 注入样式
 import styles from '@/scripts/imageDownloader/styles.css?raw';

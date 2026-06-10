@@ -4,14 +4,15 @@
   "description": "多入口油猴脚本项目",
   "type": "module",
   "scripts": {
-    "dev": "USERSCRIPT_NAME=imageDownloader vite build --watch",
-    "dev:video": "USERSCRIPT_NAME=videoDownloader vite build --watch",
-    "build:image": "USERSCRIPT_NAME=imageDownloader EMPTY_OUT_DIR=true vite build",
-    "build:video": "USERSCRIPT_NAME=videoDownloader EMPTY_OUT_DIR=false vite build",
+    "dev": "cross-env USERSCRIPT_NAME=imageDownloader vite build --watch",
+    "dev:video": "cross-env USERSCRIPT_NAME=videoDownloader vite build --watch",
+    "build:image": "cross-env USERSCRIPT_NAME=imageDownloader EMPTY_OUT_DIR=true vite build",
+    "build:video": "cross-env USERSCRIPT_NAME=videoDownloader EMPTY_OUT_DIR=false vite build",
     "build": "npm run build:image && npm run build:video",
     "preview": "npm run build"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "vite": "^5.4.21"
   },
   "dependencies": {

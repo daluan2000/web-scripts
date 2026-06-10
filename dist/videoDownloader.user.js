@@ -15,718 +15,718 @@
 // @grant        unsafeWindow
 // ==/UserScript==
 
-function B(r,e={},n="",o=""){const a=document.createElement(r);for(const[d,p]of Object.entries(e))if(d==="className")a.className=p;else if(d==="dataset")for(const[l,h]of Object.entries(p))a.dataset[l]=h;else d.startsWith("on")?a.addEventListener(d.slice(2).toLowerCase(),p):a.setAttribute(d,p);return n?a.innerHTML=n:o&&(a.textContent=o),a}function Qe(r){const e=B("style",{type:"text/css"});return e.textContent=r,document.head.appendChild(e),e}const W={logLevel:"info",storagePrefix:"userscript_",videoDownloader:{storageKeys:{downloadHistory:"videoDownloader_download_history"},backend:{baseUrl:"http://127.0.0.1:8787",wsUrl:"",requestTimeout:2e4,pollingInterval:2500}}};function Ze(r){return W.storagePrefix+r}const $e={debug:0,info:1,warn:2,error:3};function ae(r,e,...n){const o=$e[W.logLevel];if($e[r]<o)return;const a=`[${r.toUpperCase()}]`,d=new Date().toLocaleTimeString();switch(r){case"debug":case"info":console.log(`${a} [${d}]`,e,...n);break;case"warn":console.warn(`${a} [${d}]`,e,...n);break;case"error":console.error(`${a} [${d}]`,e,...n);break}}const g={debug:(r,...e)=>ae("debug",r,...e),info:(r,...e)=>ae("info",r,...e),warn:(r,...e)=>ae("warn",r,...e),error:(r,...e)=>ae("error",r,...e)};async function Ue(r,e){return new Promise(n=>{const o=JSON.stringify(e);GM_setValue(Ze(r),o),n()})}async function G(r,e={}){const{method:n="GET",headers:o={},body:a=null,dataType:d="json",responseType:p="",timeout:l=3e4}=e;return new Promise((h,S)=>{const E={method:n,url:r,headers:o,timeout:l,responseType:p,onload:m=>{if(m.status>=200&&m.status<300)try{let b;p==="blob"||p==="arraybuffer"?b=m.response:d==="text"?b=m.responseText:d==="json"?b=JSON.parse(m.responseText):b=m.responseText,h({data:b,status:m.status,headers:m.responseHeaders})}catch{h({data:m.responseText,status:m.status})}else{let b="";const N=String(m.responseText||"").trim();if(N)try{const M=JSON.parse(N);b=String((M==null?void 0:M.detail)||N)}catch{b=N}const v=b?`请求失败: ${m.status} - ${b}`:`请求失败: ${m.status}`;S(new Error(v))}},onerror:()=>S(new Error("网络请求失败")),ontimeout:()=>S(new Error("请求超时"))};a&&(E.data=typeof a=="string"?a:JSON.stringify(a),!E.headers["Content-Type"]&&!E.headers["content-type"]&&(E.headers["Content-Type"]="application/json")),GM_xmlhttpRequest(E)})}function ce(r){const e="http://127.0.0.1:8787",n=String(r||"").trim()||e;try{const o=new URL(n);return o.pathname="",o.search="",o.hash="",o.toString().replace(/\/$/,"")}catch{return e}}function Ae(r,e=""){if(e&&String(e).trim())return String(e).trim().replace(/\/$/,"");const n=ce(r);return n.startsWith("https://")?n.replace("https://","wss://"):n.replace("http://","ws://")}class et{constructor(e={}){this.baseUrl=ce(e.baseUrl),this.wsUrl=Ae(this.baseUrl,e.wsUrl),this.timeout=e.timeout||2e4}setBaseUrl(e,n=""){this.baseUrl=ce(e),this.wsUrl=Ae(this.baseUrl,n)}getBaseUrl(){return this.baseUrl}getWsUrl(){return this.wsUrl}async createTask(e){return(await G(this.buildUrl("/api/video/tasks"),{method:"POST",body:e,timeout:this.timeout,dataType:"json"})).data}async getTask(e){return(await G(this.buildUrl(`/api/video/tasks/${encodeURIComponent(e)}`),{method:"GET",timeout:this.timeout,dataType:"json"})).data}async listTasks(){var n;return((n=(await G(this.buildUrl("/api/video/tasks"),{method:"GET",timeout:this.timeout,dataType:"json"})).data)==null?void 0:n.tasks)||[]}async cancelTask(e){return(await G(this.buildUrl(`/api/video/tasks/${encodeURIComponent(e)}/cancel`),{method:"POST",timeout:this.timeout,dataType:"json"})).data}async openDirectory({taskId:e="",path:n=""}={}){return(await G(this.buildUrl("/api/video/tasks/open-dir"),{method:"POST",body:{taskId:e,path:n},timeout:this.timeout,dataType:"json"})).data}async cleanupPartDirs(){return(await G(this.buildUrl("/api/video/tasks/cleanup-part-dirs"),{method:"POST",timeout:this.timeout,dataType:"json"})).data}connectTaskStream({taskId:e="",onOpen:n,onMessage:o,onClose:a,onError:d}){const l=`${this.getWsUrl()}/api/video/tasks/ws`,h=e?`?taskId=${encodeURIComponent(e)}`:"",S=`${l}${h}`;g.info("连接后端任务 WebSocket",{wsUrl:S});const E=new WebSocket(S);return E.onopen=()=>{n==null||n()},E.onmessage=m=>{try{const b=JSON.parse(m.data);o==null||o(b)}catch(b){g.warn("WebSocket 消息解析失败",b)}},E.onerror=m=>{d==null||d(m)},E.onclose=m=>{a==null||a(m)},{close(){try{E.close()}catch(m){g.warn("关闭 WebSocket 失败",m)}}}}buildUrl(e){return`${this.baseUrl}${e}`}}const tt=`/* 视频批量下载器样式 */
-
-#vd-floating-btn {
-  position: fixed;
-  bottom: 92px;
-  right: 30px;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0ea5a4 0%, #f59e0b 100%);
-  color: #ffffff;
-  border: none;
-  cursor: grab;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6px 18px rgba(14, 165, 164, 0.38);
-  z-index: 2147483647;
-  transition: all 0.25s ease;
-  touch-action: none;
-}
-
-#vd-floating-btn:hover {
-  transform: scale(1.1);
-  box-shadow: 0 8px 22px rgba(245, 158, 11, 0.4);
-}
-
-#vd-floating-btn.active {
-  background: linear-gradient(135deg, #0f766e 0%, #ea580c 100%);
-}
-
-#vd-floating-btn.dragging {
-  cursor: grabbing;
-  transition: none;
-}
-
-#vd-floating-btn.dragging:hover {
-  transform: none;
-}
-
-#vd-floating-btn svg {
-  width: 20px;
-  height: 20px;
-}
-
-.vd-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 600px;
-  height: 675px;
-  min-width: 300px;
-  min-height: 200px;
-  background: #fefefe;
-  border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(3, 38, 55, 0.22);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 2147483646;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-}
-
-.vd-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #0f766e 0%, #0ea5a4 55%, #f59e0b 100%);
-  color: #ffffff;
-  cursor: move;
-  user-select: none;
-}
-
-.vd-panel-title {
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.vd-panel-close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 7px;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.2);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.vd-panel-close:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.vd-panel-note {
-  padding: 8px 16px;
-  font-size: 12px;
-  color: #0c4a6e;
-  background: linear-gradient(90deg, #fef9c3 0%, #ffedd5 100%);
-  border-bottom: 1px solid #fed7aa;
-}
-
-.vd-backend-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid #d8e4eb;
-  background: #eef6fb;
-}
-
-.vd-backend-status {
-  font-size: 12px;
-  font-weight: 600;
-  color: #334155;
-}
-
-.vd-backend-status.connected {
-  color: #047857;
-}
-
-.vd-backend-status.disconnected {
-  color: #b45309;
-}
-
-.vd-backend-status.polling {
-  color: #0369a1;
-}
-
-.vd-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #f4f8fa;
-  border-bottom: 1px solid #d6e3ea;
-  flex-wrap: wrap;
-}
-
-.vd-btn {
-  padding: 8px 14px;
-  border-radius: 7px;
-  border: 1px solid #b9c8d0;
-  background: #ffffff;
-  color: #334155;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.vd-btn:hover:not(:disabled) {
-  background: #eef6f8;
-}
-
-.vd-btn:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
-
-.vd-btn-primary {
-  background: #0ea5a4;
-  color: #ffffff;
-  border-color: #0f766e;
-}
-
-.vd-btn-primary:hover:not(:disabled) {
-  background: #0f766e;
-}
-
-.vd-btn-success {
-  background: #f59e0b;
-  color: #ffffff;
-  border-color: #d97706;
-}
-
-.vd-btn-success:hover:not(:disabled) {
-  background: #ea580c;
-}
-
-.vd-btn-warning {
-  background: #f97316;
-  color: #ffffff;
-  border-color: #ea580c;
-}
-
-.vd-btn-warning:hover:not(:disabled) {
-  background: #ea580c;
-}
-
-.vd-btn-ghost {
-  background: #ffffff;
-  color: #0f766e;
-  border-color: #99b9c6;
-}
-
-.vd-btn-ghost:hover:not(:disabled) {
-  background: #eff8f9;
-}
-
-.vd-prefix-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #475569;
-}
-
-.vd-input {
-  width: 100px;
-  padding: 6px 10px;
-  border-radius: 7px;
-  border: 1px solid #b8c5cf;
-  outline: none;
-  font-size: 13px;
-}
-
-.vd-input-wide {
-  width: 180px;
-}
-
-.vd-input:focus {
-  border-color: #0ea5a4;
-  box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.18);
-}
-
-.vd-video-grid {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 12px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-  gap: 10px;
-  align-content: start;
-  background: linear-gradient(180deg, #f7fafc 0%, #f1f5f9 100%);
-}
-
-.vd-task-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 96px;
-  max-height: 45%;
-  min-width: 0;
-  flex-shrink: 0;
-  border-top: 1px solid #d6e3ea;
-  background: #f8fbfd;
-}
-
-.vd-task-header {
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #334155;
-  border-bottom: 1px solid #d6e3ea;
-}
-
-.vd-task-list {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.vd-task-empty {
-  font-size: 12px;
-  color: #64748b;
-  text-align: center;
-  padding: 12px;
-}
-
-.vd-task-item {
-  border: 1px solid #d7e2ea;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 8px;
-  display: grid;
-  gap: 6px;
-}
-
-.vd-task-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.vd-task-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.vd-task-id {
-  font-size: 11px;
-  color: #475569;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vd-task-status {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.vd-task-status.queued {
-  color: #0f172a;
-  background: #e2e8f0;
-}
-
-.vd-task-status.running {
-  color: #075985;
-  background: #dbeafe;
-}
-
-.vd-task-status.cancelling {
-  color: #9a3412;
-  background: #fef3c7;
-}
-
-.vd-task-status.success {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.vd-task-status.failed {
-  color: #991b1b;
-  background: #fee2e2;
-}
-
-.vd-task-status.cancelled {
-  color: #7c2d12;
-  background: #ffedd5;
-}
-
-.vd-task-progress {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: #e2e8f0;
-  overflow: hidden;
-}
-
-.vd-task-progress-bar {
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg, #0ea5a4, #f59e0b);
-  transition: width 0.2s ease;
-}
-
-.vd-task-meta {
-  font-size: 11px;
-  color: #64748b;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.vd-task-message {
-  font-size: 11px;
-  color: #334155;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  white-space: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 4px 6px;
-  border: 1px solid #dbe6ee;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.vd-task-cancel {
-  border: 1px solid #f59e0b;
-  border-radius: 6px;
-  font-size: 11px;
-  padding: 2px 8px;
-  color: #9a3412;
-  background: #fff7ed;
-  cursor: pointer;
-}
-
-.vd-task-cancel:hover {
-  background: #ffedd5;
-}
-
-.vd-task-cancel:disabled {
-  cursor: not-allowed;
-  opacity: 0.72;
-}
-
-.vd-task-cancel.is-processing {
-  border-color: #d97706;
-  background: #fef3c7;
-  color: #9a3412;
-}
-
-.vd-task-open {
-  border: 1px solid #99b9c6;
-  border-radius: 6px;
-  font-size: 11px;
-  padding: 2px 8px;
-  color: #0f766e;
-  background: #ffffff;
-  cursor: pointer;
-}
-
-.vd-task-open:hover {
-  background: #eff8f9;
-}
-
-.vd-empty {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 42px 10px;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.vd-video-item {
-  position: relative;
-  min-height: 185px;
-  background: #ffffff;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.vd-video-item.unselectable {
-  cursor: not-allowed;
-  opacity: 0.72;
-  filter: saturate(0.7);
-}
-
-.vd-video-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.2);
-}
-
-.vd-video-item.unselectable:hover {
-  transform: none;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
-}
-
-.vd-video-item.unselectable .vd-checkbox {
-  display: none;
-}
-
-.vd-video-item.selected {
-  box-shadow: 0 0 0 3px #0ea5a4;
-}
-
-.vd-video-thumb {
-  position: relative;
-  width: 100%;
-  min-height: 110px;
-  background: linear-gradient(135deg, #1f2937 0%, #0f172a 100%);
-  overflow: hidden;
-}
-
-.vd-video-thumb video,
-.vd-video-thumb img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.vd-video-thumb-fallback::before {
-  content: 'VIDEO';
-  color: rgba(255, 255, 255, 0.88);
-  font-weight: 700;
-  letter-spacing: 1px;
-  font-size: 12px;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.vd-play-badge {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: rgba(15, 118, 110, 0.85);
-  color: #ffffff;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.vd-checkbox {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: rgba(2, 6, 23, 0.42);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.vd-video-item:hover .vd-checkbox,
-.vd-video-item.selected .vd-checkbox {
-  opacity: 1;
-}
-
-.vd-video-item.selected .vd-checkbox {
-  background: #0ea5a4;
-}
-
-.vd-video-item.selected .vd-checkbox svg rect {
-  fill: #0ea5a4;
-}
-
-.vd-video-info {
-  padding: 8px;
-  min-height: 68px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.vd-filename {
-  font-size: 12px;
-  line-height: 1.35;
-  color: #1e293b;
-  word-break: break-all;
-}
-
-.vd-filename-input {
-  width: 100%;
-  border: 1px solid #c8d5dd;
-  border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 12px;
-  color: #1e293b;
-}
-
-.vd-filename-input:focus {
-  border-color: #0ea5a4;
-  box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.16);
-}
-
-.vd-meta {
-  font-size: 11px;
-  color: #64748b;
-}
-
-.vd-badge {
-  display: inline-flex;
-  width: fit-content;
-  font-size: 10px;
-  line-height: 1;
-  padding: 4px 6px;
-  border-radius: 999px;
-}
-
-.vd-badge-hls {
-  background: #cffafe;
-  color: #115e59;
-}
-
-.vd-badge-unsupported {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.vd-panel-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 24px 10px 16px;
-  background: #eff6f9;
-  border-top: 1px solid #d6e3ea;
-}
-
-.vd-status {
-  font-size: 12px;
-  color: #334155;
-}
-
-.vd-downloaded-count {
-  font-size: 12px;
-  color: #0f766e;
-  margin-right: 20px;
-  white-space: nowrap;
-}
-
-.vd-resize-handle {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 16px;
-  height: 16px;
-  cursor: se-resize;
-  z-index: 5;
-  background: linear-gradient(
-    135deg,
-    transparent 50%,
-    #9ca3af 50%,
-    #9ca3af 60%,
-    transparent 60%,
-    transparent 70%,
-    #9ca3af 70%,
-    #9ca3af 80%,
-    transparent 80%
-  );
-}
-
-.vd-video-grid::-webkit-scrollbar {
-  width: 8px;
-}
-
-.vd-video-grid::-webkit-scrollbar-track {
-  background: #e5edf1;
-  border-radius: 4px;
-}
-
-.vd-video-grid::-webkit-scrollbar-thumb {
-  background: #9fb7c2;
-  border-radius: 4px;
-}
-
-.vd-video-grid::-webkit-scrollbar-thumb:hover {
-  background: #7f9aa7;
-}
-
-@media (max-width: 680px) {
-  .vd-panel {
-    width: 95%;
-    height: 90%;
-  }
-
-  .vd-toolbar {
-    padding: 8px 12px;
-    gap: 6px;
-  }
-
-  .vd-btn {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-
-  .vd-video-grid {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 8px;
-    padding: 8px;
-  }
-
-  .vd-input-wide {
-    width: 100%;
-  }
-
-  .vd-task-panel {
-    max-height: 42%;
-  }
-}
-
-@media (max-width: 520px) {
-  .vd-panel {
-    width: 100%;
-    height: 100%;
-    min-width: 100%;
-    border-radius: 0;
-  }
-
-  .vd-video-grid {
-    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  }
-
-  .vd-prefix-label {
-    width: 100%;
-    margin-top: 4px;
-  }
-
-  .vd-input {
-    flex: 1;
-    width: auto;
-  }
-}
+function B(r,e={},n="",o=""){const a=document.createElement(r);for(const[d,p]of Object.entries(e))if(d==="className")a.className=p;else if(d==="dataset")for(const[l,h]of Object.entries(p))a.dataset[l]=h;else d.startsWith("on")?a.addEventListener(d.slice(2).toLowerCase(),p):a.setAttribute(d,p);return n?a.innerHTML=n:o&&(a.textContent=o),a}function Qe(r){const e=B("style",{type:"text/css"});return e.textContent=r,document.head.appendChild(e),e}const W={logLevel:"info",storagePrefix:"userscript_",videoDownloader:{storageKeys:{downloadHistory:"videoDownloader_download_history"},backend:{baseUrl:"http://127.0.0.1:8787",wsUrl:"",requestTimeout:2e4,pollingInterval:2500}}};function Ze(r){return W.storagePrefix+r}const $e={debug:0,info:1,warn:2,error:3};function ae(r,e,...n){const o=$e[W.logLevel];if($e[r]<o)return;const a=`[${r.toUpperCase()}]`,d=new Date().toLocaleTimeString();switch(r){case"debug":case"info":console.log(`${a} [${d}]`,e,...n);break;case"warn":console.warn(`${a} [${d}]`,e,...n);break;case"error":console.error(`${a} [${d}]`,e,...n);break}}const g={debug:(r,...e)=>ae("debug",r,...e),info:(r,...e)=>ae("info",r,...e),warn:(r,...e)=>ae("warn",r,...e),error:(r,...e)=>ae("error",r,...e)};async function Ue(r,e){return new Promise(n=>{const o=JSON.stringify(e);GM_setValue(Ze(r),o),n()})}async function G(r,e={}){const{method:n="GET",headers:o={},body:a=null,dataType:d="json",responseType:p="",timeout:l=3e4}=e;return new Promise((h,S)=>{const E={method:n,url:r,headers:o,timeout:l,responseType:p,onload:m=>{if(m.status>=200&&m.status<300)try{let b;p==="blob"||p==="arraybuffer"?b=m.response:d==="text"?b=m.responseText:d==="json"?b=JSON.parse(m.responseText):b=m.responseText,h({data:b,status:m.status,headers:m.responseHeaders})}catch{h({data:m.responseText,status:m.status})}else{let b="";const N=String(m.responseText||"").trim();if(N)try{const M=JSON.parse(N);b=String((M==null?void 0:M.detail)||N)}catch{b=N}const v=b?`请求失败: ${m.status} - ${b}`:`请求失败: ${m.status}`;S(new Error(v))}},onerror:()=>S(new Error("网络请求失败")),ontimeout:()=>S(new Error("请求超时"))};a&&(E.data=typeof a=="string"?a:JSON.stringify(a),!E.headers["Content-Type"]&&!E.headers["content-type"]&&(E.headers["Content-Type"]="application/json")),GM_xmlhttpRequest(E)})}function ce(r){const e="http://127.0.0.1:8787",n=String(r||"").trim()||e;try{const o=new URL(n);return o.pathname="",o.search="",o.hash="",o.toString().replace(/\/$/,"")}catch{return e}}function Ae(r,e=""){if(e&&String(e).trim())return String(e).trim().replace(/\/$/,"");const n=ce(r);return n.startsWith("https://")?n.replace("https://","wss://"):n.replace("http://","ws://")}class et{constructor(e={}){this.baseUrl=ce(e.baseUrl),this.wsUrl=Ae(this.baseUrl,e.wsUrl),this.timeout=e.timeout||2e4}setBaseUrl(e,n=""){this.baseUrl=ce(e),this.wsUrl=Ae(this.baseUrl,n)}getBaseUrl(){return this.baseUrl}getWsUrl(){return this.wsUrl}async createTask(e){return(await G(this.buildUrl("/api/video/tasks"),{method:"POST",body:e,timeout:this.timeout,dataType:"json"})).data}async getTask(e){return(await G(this.buildUrl(`/api/video/tasks/${encodeURIComponent(e)}`),{method:"GET",timeout:this.timeout,dataType:"json"})).data}async listTasks(){var n;return((n=(await G(this.buildUrl("/api/video/tasks"),{method:"GET",timeout:this.timeout,dataType:"json"})).data)==null?void 0:n.tasks)||[]}async cancelTask(e){return(await G(this.buildUrl(`/api/video/tasks/${encodeURIComponent(e)}/cancel`),{method:"POST",timeout:this.timeout,dataType:"json"})).data}async openDirectory({taskId:e="",path:n=""}={}){return(await G(this.buildUrl("/api/video/tasks/open-dir"),{method:"POST",body:{taskId:e,path:n},timeout:this.timeout,dataType:"json"})).data}async cleanupPartDirs(){return(await G(this.buildUrl("/api/video/tasks/cleanup-part-dirs"),{method:"POST",timeout:this.timeout,dataType:"json"})).data}connectTaskStream({taskId:e="",onOpen:n,onMessage:o,onClose:a,onError:d}){const l=`${this.getWsUrl()}/api/video/tasks/ws`,h=e?`?taskId=${encodeURIComponent(e)}`:"",S=`${l}${h}`;g.info("连接后端任务 WebSocket",{wsUrl:S});const E=new WebSocket(S);return E.onopen=()=>{n==null||n()},E.onmessage=m=>{try{const b=JSON.parse(m.data);o==null||o(b)}catch(b){g.warn("WebSocket 消息解析失败",b)}},E.onerror=m=>{d==null||d(m)},E.onclose=m=>{a==null||a(m)},{close(){try{E.close()}catch(m){g.warn("关闭 WebSocket 失败",m)}}}}buildUrl(e){return`${this.baseUrl}${e}`}}const tt=`/* 视频批量下载器样式 */\r
+\r
+#vd-floating-btn {\r
+  position: fixed;\r
+  bottom: 92px;\r
+  right: 30px;\r
+  width: 50px;\r
+  height: 50px;\r
+  border-radius: 50%;\r
+  background: linear-gradient(135deg, #0ea5a4 0%, #f59e0b 100%);\r
+  color: #ffffff;\r
+  border: none;\r
+  cursor: grab;\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: center;\r
+  box-shadow: 0 6px 18px rgba(14, 165, 164, 0.38);\r
+  z-index: 2147483647;\r
+  transition: all 0.25s ease;\r
+  touch-action: none;\r
+}\r
+\r
+#vd-floating-btn:hover {\r
+  transform: scale(1.1);\r
+  box-shadow: 0 8px 22px rgba(245, 158, 11, 0.4);\r
+}\r
+\r
+#vd-floating-btn.active {\r
+  background: linear-gradient(135deg, #0f766e 0%, #ea580c 100%);\r
+}\r
+\r
+#vd-floating-btn.dragging {\r
+  cursor: grabbing;\r
+  transition: none;\r
+}\r
+\r
+#vd-floating-btn.dragging:hover {\r
+  transform: none;\r
+}\r
+\r
+#vd-floating-btn svg {\r
+  width: 20px;\r
+  height: 20px;\r
+}\r
+\r
+.vd-panel {\r
+  position: fixed;\r
+  top: 50%;\r
+  left: 50%;\r
+  transform: translate(-50%, -50%);\r
+  width: 600px;\r
+  height: 675px;\r
+  min-width: 300px;\r
+  min-height: 200px;\r
+  background: #fefefe;\r
+  border-radius: 14px;\r
+  box-shadow: 0 18px 48px rgba(3, 38, 55, 0.22);\r
+  display: flex;\r
+  flex-direction: column;\r
+  overflow: hidden;\r
+  z-index: 2147483646;\r
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;\r
+}\r
+\r
+.vd-panel-header {\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: space-between;\r
+  padding: 12px 16px;\r
+  background: linear-gradient(135deg, #0f766e 0%, #0ea5a4 55%, #f59e0b 100%);\r
+  color: #ffffff;\r
+  cursor: move;\r
+  user-select: none;\r
+}\r
+\r
+.vd-panel-title {\r
+  font-size: 15px;\r
+  font-weight: 700;\r
+}\r
+\r
+.vd-panel-close {\r
+  width: 28px;\r
+  height: 28px;\r
+  border: none;\r
+  border-radius: 7px;\r
+  color: #ffffff;\r
+  background: rgba(255, 255, 255, 0.2);\r
+  cursor: pointer;\r
+  font-size: 18px;\r
+  line-height: 1;\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: center;\r
+}\r
+\r
+.vd-panel-close:hover {\r
+  background: rgba(255, 255, 255, 0.3);\r
+}\r
+\r
+.vd-panel-note {\r
+  padding: 8px 16px;\r
+  font-size: 12px;\r
+  color: #0c4a6e;\r
+  background: linear-gradient(90deg, #fef9c3 0%, #ffedd5 100%);\r
+  border-bottom: 1px solid #fed7aa;\r
+}\r
+\r
+.vd-backend-strip {\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: space-between;\r
+  gap: 8px;\r
+  padding: 8px 16px;\r
+  border-bottom: 1px solid #d8e4eb;\r
+  background: #eef6fb;\r
+}\r
+\r
+.vd-backend-status {\r
+  font-size: 12px;\r
+  font-weight: 600;\r
+  color: #334155;\r
+}\r
+\r
+.vd-backend-status.connected {\r
+  color: #047857;\r
+}\r
+\r
+.vd-backend-status.disconnected {\r
+  color: #b45309;\r
+}\r
+\r
+.vd-backend-status.polling {\r
+  color: #0369a1;\r
+}\r
+\r
+.vd-toolbar {\r
+  display: flex;\r
+  align-items: center;\r
+  gap: 8px;\r
+  padding: 12px 16px;\r
+  background: #f4f8fa;\r
+  border-bottom: 1px solid #d6e3ea;\r
+  flex-wrap: wrap;\r
+}\r
+\r
+.vd-btn {\r
+  padding: 8px 14px;\r
+  border-radius: 7px;\r
+  border: 1px solid #b9c8d0;\r
+  background: #ffffff;\r
+  color: #334155;\r
+  cursor: pointer;\r
+  font-size: 13px;\r
+  transition: all 0.18s ease;\r
+  display: inline-flex;\r
+  align-items: center;\r
+  gap: 4px;\r
+}\r
+\r
+.vd-btn:hover:not(:disabled) {\r
+  background: #eef6f8;\r
+}\r
+\r
+.vd-btn:disabled {\r
+  opacity: 0.48;\r
+  cursor: not-allowed;\r
+}\r
+\r
+.vd-btn-primary {\r
+  background: #0ea5a4;\r
+  color: #ffffff;\r
+  border-color: #0f766e;\r
+}\r
+\r
+.vd-btn-primary:hover:not(:disabled) {\r
+  background: #0f766e;\r
+}\r
+\r
+.vd-btn-success {\r
+  background: #f59e0b;\r
+  color: #ffffff;\r
+  border-color: #d97706;\r
+}\r
+\r
+.vd-btn-success:hover:not(:disabled) {\r
+  background: #ea580c;\r
+}\r
+\r
+.vd-btn-warning {\r
+  background: #f97316;\r
+  color: #ffffff;\r
+  border-color: #ea580c;\r
+}\r
+\r
+.vd-btn-warning:hover:not(:disabled) {\r
+  background: #ea580c;\r
+}\r
+\r
+.vd-btn-ghost {\r
+  background: #ffffff;\r
+  color: #0f766e;\r
+  border-color: #99b9c6;\r
+}\r
+\r
+.vd-btn-ghost:hover:not(:disabled) {\r
+  background: #eff8f9;\r
+}\r
+\r
+.vd-prefix-label {\r
+  display: flex;\r
+  align-items: center;\r
+  gap: 6px;\r
+  font-size: 13px;\r
+  color: #475569;\r
+}\r
+\r
+.vd-input {\r
+  width: 100px;\r
+  padding: 6px 10px;\r
+  border-radius: 7px;\r
+  border: 1px solid #b8c5cf;\r
+  outline: none;\r
+  font-size: 13px;\r
+}\r
+\r
+.vd-input-wide {\r
+  width: 180px;\r
+}\r
+\r
+.vd-input:focus {\r
+  border-color: #0ea5a4;\r
+  box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.18);\r
+}\r
+\r
+.vd-video-grid {\r
+  flex: 1;\r
+  min-height: 0;\r
+  overflow-y: auto;\r
+  overflow-x: hidden;\r
+  padding: 12px;\r
+  display: grid;\r
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));\r
+  gap: 10px;\r
+  align-content: start;\r
+  background: linear-gradient(180deg, #f7fafc 0%, #f1f5f9 100%);\r
+}\r
+\r
+.vd-task-panel {\r
+  display: flex;\r
+  flex-direction: column;\r
+  min-height: 96px;\r
+  max-height: 45%;\r
+  min-width: 0;\r
+  flex-shrink: 0;\r
+  border-top: 1px solid #d6e3ea;\r
+  background: #f8fbfd;\r
+}\r
+\r
+.vd-task-header {\r
+  padding: 8px 12px;\r
+  font-size: 12px;\r
+  font-weight: 700;\r
+  color: #334155;\r
+  border-bottom: 1px solid #d6e3ea;\r
+}\r
+\r
+.vd-task-list {\r
+  flex: 1;\r
+  overflow-y: auto;\r
+  overflow-x: hidden;\r
+  padding: 8px;\r
+  display: flex;\r
+  flex-direction: column;\r
+  gap: 8px;\r
+  min-width: 0;\r
+}\r
+\r
+.vd-task-empty {\r
+  font-size: 12px;\r
+  color: #64748b;\r
+  text-align: center;\r
+  padding: 12px;\r
+}\r
+\r
+.vd-task-item {\r
+  border: 1px solid #d7e2ea;\r
+  border-radius: 8px;\r
+  background: #ffffff;\r
+  padding: 8px;\r
+  display: grid;\r
+  gap: 6px;\r
+}\r
+\r
+.vd-task-row {\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: space-between;\r
+  gap: 8px;\r
+  min-width: 0;\r
+}\r
+\r
+.vd-task-actions {\r
+  display: flex;\r
+  align-items: center;\r
+  gap: 6px;\r
+  flex-shrink: 0;\r
+}\r
+\r
+.vd-task-id {\r
+  font-size: 11px;\r
+  color: #475569;\r
+  flex: 1;\r
+  min-width: 0;\r
+  overflow: hidden;\r
+  text-overflow: ellipsis;\r
+  white-space: nowrap;\r
+}\r
+\r
+.vd-task-status {\r
+  font-size: 11px;\r
+  font-weight: 700;\r
+  padding: 2px 8px;\r
+  border-radius: 999px;\r
+}\r
+\r
+.vd-task-status.queued {\r
+  color: #0f172a;\r
+  background: #e2e8f0;\r
+}\r
+\r
+.vd-task-status.running {\r
+  color: #075985;\r
+  background: #dbeafe;\r
+}\r
+\r
+.vd-task-status.cancelling {\r
+  color: #9a3412;\r
+  background: #fef3c7;\r
+}\r
+\r
+.vd-task-status.success {\r
+  color: #166534;\r
+  background: #dcfce7;\r
+}\r
+\r
+.vd-task-status.failed {\r
+  color: #991b1b;\r
+  background: #fee2e2;\r
+}\r
+\r
+.vd-task-status.cancelled {\r
+  color: #7c2d12;\r
+  background: #ffedd5;\r
+}\r
+\r
+.vd-task-progress {\r
+  width: 100%;\r
+  height: 8px;\r
+  border-radius: 999px;\r
+  background: #e2e8f0;\r
+  overflow: hidden;\r
+}\r
+\r
+.vd-task-progress-bar {\r
+  height: 100%;\r
+  width: 0;\r
+  background: linear-gradient(90deg, #0ea5a4, #f59e0b);\r
+  transition: width 0.2s ease;\r
+}\r
+\r
+.vd-task-meta {\r
+  font-size: 11px;\r
+  color: #64748b;\r
+  display: flex;\r
+  gap: 10px;\r
+  flex-wrap: wrap;\r
+}\r
+\r
+.vd-task-message {\r
+  font-size: 11px;\r
+  color: #334155;\r
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;\r
+  white-space: nowrap;\r
+  overflow-x: auto;\r
+  overflow-y: hidden;\r
+  padding: 4px 6px;\r
+  border: 1px solid #dbe6ee;\r
+  border-radius: 6px;\r
+  background: #f8fafc;\r
+}\r
+\r
+.vd-task-cancel {\r
+  border: 1px solid #f59e0b;\r
+  border-radius: 6px;\r
+  font-size: 11px;\r
+  padding: 2px 8px;\r
+  color: #9a3412;\r
+  background: #fff7ed;\r
+  cursor: pointer;\r
+}\r
+\r
+.vd-task-cancel:hover {\r
+  background: #ffedd5;\r
+}\r
+\r
+.vd-task-cancel:disabled {\r
+  cursor: not-allowed;\r
+  opacity: 0.72;\r
+}\r
+\r
+.vd-task-cancel.is-processing {\r
+  border-color: #d97706;\r
+  background: #fef3c7;\r
+  color: #9a3412;\r
+}\r
+\r
+.vd-task-open {\r
+  border: 1px solid #99b9c6;\r
+  border-radius: 6px;\r
+  font-size: 11px;\r
+  padding: 2px 8px;\r
+  color: #0f766e;\r
+  background: #ffffff;\r
+  cursor: pointer;\r
+}\r
+\r
+.vd-task-open:hover {\r
+  background: #eff8f9;\r
+}\r
+\r
+.vd-empty {\r
+  grid-column: 1 / -1;\r
+  text-align: center;\r
+  padding: 42px 10px;\r
+  color: #64748b;\r
+  font-size: 14px;\r
+}\r
+\r
+.vd-video-item {\r
+  position: relative;\r
+  min-height: 185px;\r
+  background: #ffffff;\r
+  border-radius: 10px;\r
+  overflow: hidden;\r
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);\r
+  cursor: pointer;\r
+  transition: transform 0.2s ease, box-shadow 0.2s ease;\r
+}\r
+\r
+.vd-video-item.unselectable {\r
+  cursor: not-allowed;\r
+  opacity: 0.72;\r
+  filter: saturate(0.7);\r
+}\r
+\r
+.vd-video-item:hover {\r
+  transform: translateY(-2px);\r
+  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.2);\r
+}\r
+\r
+.vd-video-item.unselectable:hover {\r
+  transform: none;\r
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);\r
+}\r
+\r
+.vd-video-item.unselectable .vd-checkbox {\r
+  display: none;\r
+}\r
+\r
+.vd-video-item.selected {\r
+  box-shadow: 0 0 0 3px #0ea5a4;\r
+}\r
+\r
+.vd-video-thumb {\r
+  position: relative;\r
+  width: 100%;\r
+  min-height: 110px;\r
+  background: linear-gradient(135deg, #1f2937 0%, #0f172a 100%);\r
+  overflow: hidden;\r
+}\r
+\r
+.vd-video-thumb video,\r
+.vd-video-thumb img {\r
+  position: absolute;\r
+  top: 0;\r
+  left: 0;\r
+  width: 100%;\r
+  height: 100%;\r
+  object-fit: cover;\r
+}\r
+\r
+.vd-video-thumb-fallback::before {\r
+  content: 'VIDEO';\r
+  color: rgba(255, 255, 255, 0.88);\r
+  font-weight: 700;\r
+  letter-spacing: 1px;\r
+  font-size: 12px;\r
+  position: absolute;\r
+  left: 50%;\r
+  top: 50%;\r
+  transform: translate(-50%, -50%);\r
+}\r
+\r
+.vd-play-badge {\r
+  position: absolute;\r
+  right: 8px;\r
+  bottom: 8px;\r
+  width: 24px;\r
+  height: 24px;\r
+  border-radius: 50%;\r
+  background: rgba(15, 118, 110, 0.85);\r
+  color: #ffffff;\r
+  font-size: 12px;\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: center;\r
+}\r
+\r
+.vd-checkbox {\r
+  position: absolute;\r
+  top: 6px;\r
+  left: 6px;\r
+  width: 22px;\r
+  height: 22px;\r
+  border-radius: 4px;\r
+  background: rgba(2, 6, 23, 0.42);\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: center;\r
+  opacity: 0;\r
+  transition: opacity 0.2s;\r
+}\r
+\r
+.vd-video-item:hover .vd-checkbox,\r
+.vd-video-item.selected .vd-checkbox {\r
+  opacity: 1;\r
+}\r
+\r
+.vd-video-item.selected .vd-checkbox {\r
+  background: #0ea5a4;\r
+}\r
+\r
+.vd-video-item.selected .vd-checkbox svg rect {\r
+  fill: #0ea5a4;\r
+}\r
+\r
+.vd-video-info {\r
+  padding: 8px;\r
+  min-height: 68px;\r
+  display: flex;\r
+  flex-direction: column;\r
+  gap: 5px;\r
+}\r
+\r
+.vd-filename {\r
+  font-size: 12px;\r
+  line-height: 1.35;\r
+  color: #1e293b;\r
+  word-break: break-all;\r
+}\r
+\r
+.vd-filename-input {\r
+  width: 100%;\r
+  border: 1px solid #c8d5dd;\r
+  border-radius: 6px;\r
+  padding: 4px 6px;\r
+  font-size: 12px;\r
+  color: #1e293b;\r
+}\r
+\r
+.vd-filename-input:focus {\r
+  border-color: #0ea5a4;\r
+  box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.16);\r
+}\r
+\r
+.vd-meta {\r
+  font-size: 11px;\r
+  color: #64748b;\r
+}\r
+\r
+.vd-badge {\r
+  display: inline-flex;\r
+  width: fit-content;\r
+  font-size: 10px;\r
+  line-height: 1;\r
+  padding: 4px 6px;\r
+  border-radius: 999px;\r
+}\r
+\r
+.vd-badge-hls {\r
+  background: #cffafe;\r
+  color: #115e59;\r
+}\r
+\r
+.vd-badge-unsupported {\r
+  background: #fee2e2;\r
+  color: #991b1b;\r
+}\r
+\r
+.vd-panel-footer {\r
+  display: flex;\r
+  align-items: center;\r
+  justify-content: space-between;\r
+  padding: 10px 24px 10px 16px;\r
+  background: #eff6f9;\r
+  border-top: 1px solid #d6e3ea;\r
+}\r
+\r
+.vd-status {\r
+  font-size: 12px;\r
+  color: #334155;\r
+}\r
+\r
+.vd-downloaded-count {\r
+  font-size: 12px;\r
+  color: #0f766e;\r
+  margin-right: 20px;\r
+  white-space: nowrap;\r
+}\r
+\r
+.vd-resize-handle {\r
+  position: absolute;\r
+  right: 0;\r
+  bottom: 0;\r
+  width: 16px;\r
+  height: 16px;\r
+  cursor: se-resize;\r
+  z-index: 5;\r
+  background: linear-gradient(\r
+    135deg,\r
+    transparent 50%,\r
+    #9ca3af 50%,\r
+    #9ca3af 60%,\r
+    transparent 60%,\r
+    transparent 70%,\r
+    #9ca3af 70%,\r
+    #9ca3af 80%,\r
+    transparent 80%\r
+  );\r
+}\r
+\r
+.vd-video-grid::-webkit-scrollbar {\r
+  width: 8px;\r
+}\r
+\r
+.vd-video-grid::-webkit-scrollbar-track {\r
+  background: #e5edf1;\r
+  border-radius: 4px;\r
+}\r
+\r
+.vd-video-grid::-webkit-scrollbar-thumb {\r
+  background: #9fb7c2;\r
+  border-radius: 4px;\r
+}\r
+\r
+.vd-video-grid::-webkit-scrollbar-thumb:hover {\r
+  background: #7f9aa7;\r
+}\r
+\r
+@media (max-width: 680px) {\r
+  .vd-panel {\r
+    width: 95%;\r
+    height: 90%;\r
+  }\r
+\r
+  .vd-toolbar {\r
+    padding: 8px 12px;\r
+    gap: 6px;\r
+  }\r
+\r
+  .vd-btn {\r
+    padding: 6px 10px;\r
+    font-size: 12px;\r
+  }\r
+\r
+  .vd-video-grid {\r
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));\r
+    gap: 8px;\r
+    padding: 8px;\r
+  }\r
+\r
+  .vd-input-wide {\r
+    width: 100%;\r
+  }\r
+\r
+  .vd-task-panel {\r
+    max-height: 42%;\r
+  }\r
+}\r
+\r
+@media (max-width: 520px) {\r
+  .vd-panel {\r
+    width: 100%;\r
+    height: 100%;\r
+    min-width: 100%;\r
+    border-radius: 0;\r
+  }\r
+\r
+  .vd-video-grid {\r
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));\r
+  }\r
+\r
+  .vd-prefix-label {\r
+    width: 100%;\r
+    margin-top: 4px;\r
+  }\r
+\r
+  .vd-input {\r
+    flex: 1;\r
+    width: auto;\r
+  }\r
+}\r
 `;function Be(r){const{target:e,handle:n=e,onClick:o,shouldStart:a,dragThreshold:d=4,clampToViewport:p=!0,dragClassName:l,bodyCursor:h="",removeTransformOnStart:S=!1,onDragStart:E,onDrag:m,onDragEnd:b}=r||{};if(!e||!n)return()=>{};let N=null,v=0,M=0,$=0,O=0,_=!1,F=!1;const Y=k=>{if(o){if(F){k.preventDefault(),k.stopPropagation(),F=!1;return}o(k)}},J=k=>{if(k.pointerType==="mouse"&&k.button!==0||typeof a=="function"&&!a(k))return;const z=e.getBoundingClientRect();v=k.clientX,M=k.clientY,$=z.left,O=z.top,_=!1,N=k.pointerId,e.style.left=`${$}px`,e.style.top=`${O}px`,e.style.right="auto",e.style.bottom="auto",S&&(e.style.transform="none"),l&&e.classList.add(l),n.setPointerCapture(N),document.body.style.userSelect="none",h&&(document.body.style.cursor=h),typeof E=="function"&&E(k),k.preventDefault()},Z=k=>{if(k.pointerId!==N)return;const z=k.clientX-v,ee=k.clientY-M;if(!_&&Math.hypot(z,ee)>=d&&(_=!0,F=!0),!_)return;let j=$+z,Q=O+ee;if(p){const te=Math.max(0,window.innerWidth-e.offsetWidth),se=Math.max(0,window.innerHeight-e.offsetHeight);j=Math.max(0,Math.min(j,te)),Q=Math.max(0,Math.min(Q,se))}e.style.left=`${j}px`,e.style.top=`${Q}px`,typeof m=="function"&&m(k)},H=k=>{k.pointerId===N&&(n.hasPointerCapture(N)&&n.releasePointerCapture(N),N=null,l&&e.classList.remove(l),document.body.style.userSelect="",h&&(document.body.style.cursor=""),typeof b=="function"&&b(k))};return n.addEventListener("click",Y),n.addEventListener("pointerdown",J),n.addEventListener("pointermove",Z),n.addEventListener("pointerup",H),n.addEventListener("pointercancel",H),()=>{n.removeEventListener("click",Y),n.removeEventListener("pointerdown",J),n.removeEventListener("pointermove",Z),n.removeEventListener("pointerup",H),n.removeEventListener("pointercancel",H)}}const nt=30,rt=92;function Me(r){if(!r)return;const e=r.getBoundingClientRect(),n=Math.max(1,window.innerWidth-e.width),o=Math.max(1,window.innerHeight-e.height);r.dataset.ratioX=String(Math.min(1,Math.max(0,e.left/n))),r.dataset.ratioY=String(Math.min(1,Math.max(0,e.top/o)))}function at(r){if(!r)return;const e=Number(r.dataset.ratioX),n=Number(r.dataset.ratioY);if(!Number.isFinite(e)||!Number.isFinite(n))return;const o=Math.max(0,window.innerWidth-r.offsetWidth),a=Math.max(0,window.innerHeight-r.offsetHeight);r.style.left=`${Math.round(o*e)}px`,r.style.top=`${Math.round(a*n)}px`,r.style.right="auto",r.style.bottom="auto"}function st(r){const e=B("div",{id:"vd-floating-btn",title:"视频批量下载器"},`
     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
       <path d="M6 4.5v15l12-7.5z"/>
