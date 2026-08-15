@@ -23,8 +23,17 @@ export function createPanel() {
       <button class="id-btn id-btn-primary" id="id-capture" title="快捷键: Ctrl+Shift+I">
         <span>🔍</span> 捕获图片
       </button>
+      <label
+        class="id-switch-label id-auto-capture-label"
+        id="id-auto-capture-label"
+        title="开启后会在滚动和页面变化时持续累计图片"
+      >
+        <input type="checkbox" id="id-auto-capture-toggle" />
+        自动捕获
+      </label>
       <button class="id-btn" id="id-select-all">全选</button>
       <button class="id-btn" id="id-select-none">全不选</button>
+      <button class="id-btn" id="id-clear-captured">清空捕获</button>
       <button class="id-btn id-btn-success" id="id-download" disabled>
         下载选中
       </button>
@@ -120,8 +129,13 @@ export function createToolbar(handlers = {}) {
   toolbar.className = 'id-toolbar';
   toolbar.innerHTML = `
     <button class="id-btn id-btn-primary" id="id-capture">🔍 捕获图片</button>
+    <label class="id-switch-label id-auto-capture-label" id="id-auto-capture-label">
+      <input type="checkbox" id="id-auto-capture-toggle" />
+      自动捕获
+    </label>
     <button class="id-btn" id="id-select-all">全选</button>
     <button class="id-btn" id="id-select-none">全不选</button>
+    <button class="id-btn" id="id-clear-captured">清空捕获</button>
     <button class="id-btn id-btn-success" id="id-download" disabled>下载选中</button>
   `;
   return toolbar;

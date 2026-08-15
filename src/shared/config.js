@@ -23,6 +23,10 @@ export const config = {
       downloadHistory: 'imageDownloader_download_history',
       gifQualityMode: 'imageDownloader_gif_quality_mode',
     },
+    autoCapture: {
+      minScanInterval: 200,
+      fallbackInterval: 1000,
+    },
   },
 
   // videoDownloader 专用配置

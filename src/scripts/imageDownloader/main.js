@@ -18,7 +18,7 @@ function isTopWindow() {
 
 export const USERSCRIPT_HEADER = `// @name         Image Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  图片批量下载器 - 捕获页面图片并支持批量下载
 // @match        https://*/*
 // @match        http://*/*
@@ -42,6 +42,8 @@ import { ImageSelector } from '@/scripts/imageDownloader/imageSelector.js';
 import { BatchDownloader } from '@/scripts/imageDownloader/batchDownloader.js';
 import { createPanel } from '@/scripts/imageDownloader/panel.js';
 import { getActiveEnhancerName, getEnhancerDisplayName } from '@/scripts/imageDownloader/imageEnhancers.js';
+import { ImageCollection } from '@/scripts/imageDownloader/imageCollection.js';
+import { AutoCaptureController } from '@/scripts/imageDownloader/autoCapture.js';
 
 const SHORTCUT_KEY = 'i'; // 默认使用 Ctrl+Shift+I 触发
 const DOWNLOADED_HISTORY_KEY =
@@ -73,6 +75,9 @@ function normalizeGifQualityMode(mode) {
   const downloadHistory = [];
   let useHighQualityGif = true;
   let shortcutEnabled = true;
+  let isDownloading = false;
+  const imageCapture = new ImageCapture();
+  const imageCollection = new ImageCollection();
 
   function updateDownloadedCount(downloadedCountText) {
     if (!downloadedCountText) return;
@@ -121,7 +126,7 @@ function normalizeGifQualityMode(mode) {
   }
 
   // 监听快捷键
-  function setupShortcutKey(imageSelector, statusText) {
+  function setupShortcutKey(onCapture) {
     document.addEventListener('keydown', (e) => {
       const key = String(e.key || '').toLowerCase();
 
@@ -138,16 +143,7 @@ function normalizeGifQualityMode(mode) {
           showPanel();
         }
 
-        logger.info('快捷键触发图片捕获');
-
-        // 执行捕捉
-        const capture = new ImageCapture();
-        currentImages = capture.getAllImages();
-        imageSelector.render(currentImages);
-        if (statusText) {
-          statusText.textContent = `已捕获 ${currentImages.length} 张图片`;
-        }
-        logger.info('快捷键捕获完成', { count: currentImages.length });
+        onCapture();
 
         // 防止连续触发
         setTimeout(() => {
@@ -190,7 +186,10 @@ function normalizeGifQualityMode(mode) {
   const selectNoneBtn = panel.querySelector('#id-select-none');
   const downloadBtn = panel.querySelector('#id-download');
   const clearStorageBtn = panel.querySelector('#id-clear-storage');
+  const clearCapturedBtn = panel.querySelector('#id-clear-captured');
   const captureBtn = panel.querySelector('#id-capture');
+  const autoCaptureToggle = panel.querySelector('#id-auto-capture-toggle');
+  const autoCaptureLabel = panel.querySelector('#id-auto-capture-label');
   const prefixInput = panel.querySelector('#id-prefix');
   const gifQualityToggle = panel.querySelector('#id-gif-quality-toggle');
   const statusText = panel.querySelector('.id-status');
@@ -232,17 +231,76 @@ function normalizeGifQualityMode(mode) {
     },
   });
 
-  // 设置快捷键（在 imageSelector 初始化后）
-  setupShortcutKey(imageSelector, statusText);
+  function scanAndUpdate({ replace = false, source = 'manual' } = {}) {
+    const scannedImages = imageCapture.getAllImages();
+    const result = replace
+      ? imageCollection.replace(scannedImages)
+      : imageCollection.merge(scannedImages);
+
+    if (result.changed || replace) {
+      currentImages = imageCollection.getSortedImages();
+      imageSelector.render(currentImages, { preserveSelection: !replace });
+    }
+
+    logger.info('图片捕获完成', {
+      source,
+      scanned: scannedImages.length,
+      added: result.added,
+      updated: result.updated,
+      total: imageCollection.size,
+    });
+
+    return result;
+  }
+
+  const autoCaptureSettings = config.imageDownloader?.autoCapture || {};
+  const autoCaptureController = new AutoCaptureController({
+    minScanInterval: autoCaptureSettings.minScanInterval,
+    fallbackInterval: autoCaptureSettings.fallbackInterval,
+    onScan: () => {
+      const result = scanAndUpdate({ source: 'auto' });
+      if (!isDownloading) {
+        statusText.textContent = result.added > 0
+          ? `自动捕获中：累计 ${imageCollection.size} 张，本轮新增 ${result.added} 张`
+          : `自动捕获中：累计 ${imageCollection.size} 张`;
+      }
+    },
+    onError: (error) => {
+      logger.error('自动捕获失败', error);
+      if (!isDownloading) statusText.textContent = '自动捕获扫描失败，将继续重试';
+    },
+  });
+
+  function runManualCapture(source = 'manual') {
+    const isAutoCapturing = autoCaptureController.active;
+    logger.info('开始手动捕获图片', { source, isAutoCapturing });
+    const result = scanAndUpdate({ replace: !isAutoCapturing, source });
+    statusText.textContent = isAutoCapturing
+      ? `自动捕获中：累计 ${imageCollection.size} 张，本轮新增 ${result.added} 张`
+      : `已捕获 ${imageCollection.size} 张图片`;
+  }
+
+  // 设置快捷键（在捕获控制器初始化后）
+  setupShortcutKey(() => runManualCapture('shortcut'));
 
   // 捕获图片
   captureBtn.addEventListener('click', () => {
-    logger.info('开始手动捕获图片');
-    const capture = new ImageCapture();
-    currentImages = capture.getAllImages();
-    imageSelector.render(currentImages);
-    statusText.textContent = `已捕获 ${currentImages.length} 张图片`;
-    logger.info('手动捕获完成', { count: currentImages.length });
+    runManualCapture('button');
+  });
+
+  autoCaptureToggle.addEventListener('change', () => {
+    if (autoCaptureToggle.checked) {
+      autoCaptureLabel.classList.add('is-active');
+      statusText.textContent = `自动捕获中：累计 ${imageCollection.size} 张`;
+      autoCaptureController.start();
+      logger.info('自动捕获已开启');
+      return;
+    }
+
+    autoCaptureController.stop();
+    autoCaptureLabel.classList.remove('is-active');
+    statusText.textContent = `自动捕获已停止，共捕获 ${imageCollection.size} 张图片`;
+    logger.info('自动捕获已停止', { count: imageCollection.size });
   });
 
   // 全选
@@ -253,6 +311,16 @@ function normalizeGifQualityMode(mode) {
   // 全不选
   selectNoneBtn.addEventListener('click', () => {
     imageSelector.selectNone();
+  });
+
+  clearCapturedBtn.addEventListener('click', () => {
+    imageCollection.clear();
+    currentImages = [];
+    imageSelector.render(currentImages);
+    statusText.textContent = autoCaptureController.active
+      ? '已清空捕获，自动捕获将继续累计'
+      : '已清空捕获图片';
+    logger.info('已清空当前捕获图片');
   });
 
   clearStorageBtn.addEventListener('click', async () => {
@@ -286,6 +354,7 @@ function normalizeGifQualityMode(mode) {
       count: imagesToDownload.length,
       prefix,
     });
+    isDownloading = true;
 
     const downloader = new BatchDownloader({
       prefix,
@@ -294,6 +363,7 @@ function normalizeGifQualityMode(mode) {
         statusText.textContent = `下载中: ${current}/${total}`;
       },
       onComplete: async (success, failed, successUrls = []) => {
+        isDownloading = false;
         statusText.textContent = `完成: 成功 ${success}, 失败 ${failed}`;
 
         if (successUrls.length > 0) {

@@ -90,6 +90,36 @@ export class ImageSelector extends ResourceSelector {
   }
 
   /**
+   * 刷新图片列表时可按 URL 保留选择状态，并保持网格滚动位置。
+   * @param {Array} resources - 图片数组
+   * @param {object} options - 渲染选项
+   * @param {boolean} options.preserveSelection - 是否保留已选 URL
+   */
+  render(resources, options = {}) {
+    const preserveSelection = Boolean(options.preserveSelection);
+    const selectedUrls = preserveSelection
+      ? new Set(this.getSelectedResources().map((image) => image?.src).filter(Boolean))
+      : new Set();
+    const previousScrollTop = this.grid.scrollTop;
+
+    super.render(resources);
+
+    if (preserveSelection && selectedUrls.size > 0) {
+      this.resources.forEach((image, index) => {
+        if (selectedUrls.has(image?.src)) {
+          this.selected.add(index);
+        }
+      });
+      this.updateUI();
+      this.onSelectionChange(this.getSelectedResources());
+    }
+
+    if (preserveSelection) {
+      this.grid.scrollTop = previousScrollTop;
+    }
+  }
+
+  /**
    * 兼容旧调用名称
    * @returns {Array}
    */

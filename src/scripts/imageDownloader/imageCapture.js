@@ -4,6 +4,8 @@
  */
 import { enhanceImageUrl } from './imageEnhancers.js';
 
+const DOWNLOADER_UI_SELECTOR = '#id-panel, #id-floating-btn';
+
 export class ImageCapture {
   /**
    * 获取当前页面所有图片
@@ -12,6 +14,9 @@ export class ImageCapture {
   getAllImages() {
     const images = [];
     const seen = new Set();
+    // 同一轮中大量图片通常共享祖先，缓存可避免重复布局读取和 path 计算。
+    this.rectCache = new WeakMap();
+    this.pathSegmentCache = new WeakMap();
 
     // 1. 获取 <img> 标签
     const imgElements = document.querySelectorAll('img');
@@ -32,6 +37,7 @@ export class ImageCapture {
     // 3. 获取 CSS 背景图片
     const elements = document.querySelectorAll('*');
     elements.forEach((el) => {
+      if (this.isDownloaderUiElement(el)) return;
       const style = window.getComputedStyle(el);
       const bgImage = style.backgroundImage;
       if (bgImage && bgImage !== 'none') {
@@ -93,6 +99,8 @@ export class ImageCapture {
    * 处理图片元素，支持多种懒加载属性
    */
   processImageElement(img, type, seen, images) {
+    if (this.isDownloaderUiElement(img)) return;
+
     // 优先使用真实 URL（非空、非占位符）
     const src = this.getImageSrc(img.src) || this.getImageSrc(img.dataset?.src) || 
                 this.getImageSrc(img.dataset?.original) || this.getImageSrc(img.dataset?.lazy) ||
@@ -108,6 +116,8 @@ export class ImageCapture {
    * 处理懒加载属性
    */
   processLazySrc(el, seen, images) {
+    if (this.isDownloaderUiElement(el)) return;
+
     // 常见的懒加载属性
     const lazyAttrs = [
       'data-src', 'data-original', 'data-lazy', 'data-srcset',
@@ -247,6 +257,8 @@ export class ImageCapture {
    * @returns {object} 图片信息
    */
   createImageInfo(src, type, element) {
+    const domMetadata = this.getDomMetadata(element);
+
     return {
       src,
       type,
@@ -255,7 +267,99 @@ export class ImageCapture {
       height: element?.naturalHeight || element?.height || 0,
       fileSize: null,
       element: element,
+      ...domMetadata,
     };
+  }
+
+  /**
+   * 排除下载器自身的面板、悬浮按钮和其中生成的缩略图。
+   */
+  isDownloaderUiElement(element) {
+    return Boolean(element?.closest?.(DOWNLOADER_UI_SELECTOR));
+  }
+
+  /**
+   * 创建带同级序号的结构化 DOM path，并记录每一级祖先的内容坐标。
+   */
+  getDomMetadata(element) {
+    if (!(element instanceof Element)) {
+      return {
+        domPath: [],
+        pageRect: this.createEmptyRect(),
+        ancestorRects: [],
+      };
+    }
+
+    const nodes = [];
+    let current = element;
+    while (current instanceof Element) {
+      nodes.push(current);
+      current = current.parentElement;
+    }
+    nodes.reverse();
+
+    const ancestorRects = nodes.map((node) => this.getContentRect(node));
+    return {
+      domPath: nodes.map((node) => this.getPathSegment(node)),
+      pageRect: ancestorRects[ancestorRects.length - 1] || this.createEmptyRect(),
+      ancestorRects,
+    };
+  }
+
+  getPathSegment(element) {
+    const cached = this.pathSegmentCache?.get(element);
+    if (cached) return cached;
+
+    const tagName = String(element.tagName || 'element').toLowerCase();
+    let siblingIndex = 1;
+    let sibling = element.previousElementSibling;
+
+    while (sibling) {
+      if (sibling.tagName === element.tagName) siblingIndex += 1;
+      sibling = sibling.previousElementSibling;
+    }
+
+    const segment = `${tagName}:nth-of-type(${siblingIndex})`;
+    this.pathSegmentCache?.set(element, segment);
+    return segment;
+  }
+
+  getContentRect(element) {
+    const cached = this.rectCache?.get(element);
+    if (cached) return cached;
+
+    const rect = element.getBoundingClientRect();
+    let nestedScrollTop = 0;
+    let nestedScrollLeft = 0;
+    let ancestor = element.parentElement;
+
+    while (ancestor) {
+      if (ancestor !== document.scrollingElement) {
+        nestedScrollTop += Number(ancestor.scrollTop || 0);
+        nestedScrollLeft += Number(ancestor.scrollLeft || 0);
+      }
+      ancestor = ancestor.parentElement;
+    }
+
+    const top = Number(rect.top || 0) + Number(window.scrollY || 0) + nestedScrollTop;
+    const left = Number(rect.left || 0) + Number(window.scrollX || 0) + nestedScrollLeft;
+    const width = Math.max(0, Number(rect.width || 0));
+    const height = Math.max(0, Number(rect.height || 0));
+
+    const contentRect = {
+      top,
+      left,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+    };
+    this.rectCache?.set(element, contentRect);
+    return contentRect;
+  }
+
+  createEmptyRect() {
+    return { top: 0, left: 0, width: 0, height: 0, right: 0, bottom: 0 };
   }
 
   /**

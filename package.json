@@ -9,6 +9,7 @@
     "build:image": "cross-env USERSCRIPT_NAME=imageDownloader EMPTY_OUT_DIR=true vite build",
     "build:video": "cross-env USERSCRIPT_NAME=videoDownloader EMPTY_OUT_DIR=false vite build",
     "build": "npm run build:image && npm run build:video",
+    "test:image": "node --test src/scripts/imageDownloader/tests/*.test.js",
     "preview": "npm run build"
   },
   "devDependencies": {

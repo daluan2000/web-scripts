@@ -226,6 +226,13 @@
   cursor: pointer;
 }
 
+.id-auto-capture-label.is-active {
+  color: #276749;
+  background: #f0fff4;
+  border-color: #48bb78;
+  box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.12);
+}
+
 .id-input {
   padding: 6px 10px;
   border: 1px solid #ddd;
