@@ -235,6 +235,7 @@ npm run build
 
 该命令会按脚本逐个打包，确保每个 userscript 都是单文件产物。
 每次构建会生成一个约 8 位的 Base36 时间前缀，不清空或覆盖旧产物。
+产物默认不压缩，保留正常的 JavaScript 换行和缩进，便于检查与调试。
 
 打包后的文件会输出到：
 - `dist/<前缀>-imageDownloader.user.js`
@@ -289,7 +290,6 @@ import { logger } from '../shared/logger.js';
 - 共享模块依赖 Tampermonkey 的 GM_* API
 - 打包后的文件头部会自动注入元数据信息
 - 样式文件需要在脚本中手动引入或通过 GM_addStyle 注入
-
 
 
 

@@ -42,7 +42,29 @@ function extractHeader(scriptName) {
   return match ? match[1].trim() : null;
 }
 
+function readableRawCss() {
+  return {
+    name: 'readable-raw-css',
+    enforce: 'post',
+    transform(code, id) {
+      if (!id.endsWith('.css?raw')) return null;
+
+      const filePath = id.slice(0, -'?raw'.length);
+      const css = readFileSync(filePath, 'utf-8')
+        .replace(/\\/g, '\\\\')
+        .replace(/`/g, '\\`')
+        .replace(/\$\{/g, '\\${');
+
+      return {
+        code: `export default \`${css}\`;`,
+        map: null,
+      };
+    },
+  };
+}
+
 export default defineConfig({
+  plugins: [readableRawCss()],
   css: {
     modules: {
       localsConvention: 'camelCase',
@@ -56,6 +78,8 @@ export default defineConfig({
   build: {
     // 每次构建使用新文件名，旧产物由使用者手动清理。
     emptyOutDir: false,
+    // Userscript 产物保留正常的换行、缩进和变量名，便于检查与调试。
+    minify: false,
     rollupOptions: {
       input,
       output: {
