@@ -50,7 +50,7 @@
 
 **方法一：直接安装（推荐）**
 
-1. 找到 `dist/imageDownloader.user.js` 文件
+1. 找到 `dist/<前缀>-imageDownloader.user.js` 文件（选择前缀最新的一个）
 2. 用浏览器打开这个文件（双击或在浏览器地址栏输入文件路径）
 3. 浏览器会提示「Tampermonkey 想知道..."」，点击「继续安装」
 
@@ -60,7 +60,7 @@
 2. 点击「管理面板」
 3. 点击左侧「工具」选项
 4. 选择「从本地文件导入」
-5. 选择 `dist/imageDownloader.user.js` 文件
+5. 选择 `dist/<前缀>-imageDownloader.user.js` 文件
 
 ### 第三步：使用脚本
 
@@ -140,8 +140,8 @@ my-userscripts/
 │       ├── common.css     # 通用样式
 │       └── popup.css      # 弹窗样式
 │
-├── dist/                  # 打包输出目录
-│   └── imageDownloader.user.js  # 打包产物（可直接安装）
+├── dist/                  # 打包输出目录，保留历次构建
+│   └── <前缀>-imageDownloader.user.js  # 打包产物（可直接安装）
 │
 ├── package.json           # 项目配置
 ├── vite.config.js         # Vite 构建配置
@@ -220,21 +220,30 @@ uvicorn app.main:app --host 127.0.0.1 --port 8787 --reload
 
 ### 生产打包
 
-执行一次性打包：
+只构建图片或视频脚本：
+
+```bash
+npm run build:image
+npm run build:video
+```
+
+构建全部脚本：
 
 ```bash
 npm run build
 ```
 
 该命令会按脚本逐个打包，确保每个 userscript 都是单文件产物。
+每次构建会生成一个约 8 位的 Base36 时间前缀，不清空或覆盖旧产物。
 
 打包后的文件会输出到：
-- `dist/imageDownloader.user.js`
-- `dist/videoDownloader.user.js`
+- `dist/<前缀>-imageDownloader.user.js`
+- `dist/<前缀>-videoDownloader.user.js`
 
 两者都可直接安装使用。
 
-说明：不会依赖 `dist/assets` 共享 chunk。
+说明：不会依赖 `dist/assets` 共享 chunk。如需手动指定前缀，可使用
+`BUILD_PREFIX=my1 npm run build:image`；自定义前缀只能包含字母、数字、下划线和连字符。
 
 ## 添加新增强规则
 
@@ -280,7 +289,6 @@ import { logger } from '../shared/logger.js';
 - 共享模块依赖 Tampermonkey 的 GM_* API
 - 打包后的文件头部会自动注入元数据信息
 - 样式文件需要在脚本中手动引入或通过 GM_addStyle 注入
-
 
 
 
