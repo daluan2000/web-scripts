@@ -18,7 +18,7 @@ function isTopWindow() {
 
 export const USERSCRIPT_HEADER = `// @name         Image Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  图片批量下载器 - 捕获页面图片并支持批量下载
 // @match        https://*/*
 // @match        http://*/*

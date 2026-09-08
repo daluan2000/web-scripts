@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  图片批量下载器 - 捕获页面图片并支持批量下载
 // @match        https://*/*
 // @match        http://*/*
@@ -939,22 +939,17 @@ class ImageCapture {
    * @returns {Array} 图片列表
    */
   getAllImages() {
-    const images = [];
-    const seen = /* @__PURE__ */ new Set();
-    this.rectCache = /* @__PURE__ */ new WeakMap();
+    const imagesByUrl = /* @__PURE__ */ new Map();
     this.pathSegmentCache = /* @__PURE__ */ new WeakMap();
     const imgElements = document.querySelectorAll("img");
     imgElements.forEach((img) => {
-      this.processImageElement(img, "img", seen, images);
+      this.processImageElement(img, "img", imagesByUrl);
     });
     const svgImages = document.querySelectorAll("image");
     svgImages.forEach((img) => {
       var _a2;
       const src = this.getImageSrc(((_a2 = img.href) == null ? void 0 : _a2.baseVal) || img.getAttribute("href"));
-      if (src && !seen.has(src)) {
-        seen.add(src);
-        images.push(this.createImageInfo(src, "svg-image", img));
-      }
+      if (src) imagesByUrl.set(src, this.createImageInfo(src, "svg-image", img));
     });
     const elements = document.querySelectorAll("*");
     elements.forEach((el) => {
@@ -965,10 +960,7 @@ class ImageCapture {
         const urls = this.extractUrls(bgImage);
         urls.forEach((url) => {
           const src = this.getImageSrc(url);
-          if (src && !seen.has(src)) {
-            seen.add(src);
-            images.push(this.createImageInfo(src, "background", el));
-          }
+          if (src) imagesByUrl.set(src, this.createImageInfo(src, "background", el));
         });
       }
     });
@@ -976,51 +968,39 @@ class ImageCapture {
     sources.forEach((source) => {
       var _a2, _b2, _c2;
       const src = this.getImageSrc((_c2 = (_b2 = (_a2 = source.srcset) == null ? void 0 : _a2.split(",")[0]) == null ? void 0 : _b2.trim()) == null ? void 0 : _c2.split(" ")[0]);
-      if (src && !seen.has(src)) {
-        seen.add(src);
-        images.push(this.createImageInfo(src, "source", source));
-      }
+      if (src) imagesByUrl.set(src, this.createImageInfo(src, "source", source));
     });
     elements.forEach((el) => {
-      this.processLazySrc(el, seen, images);
+      this.processLazySrc(el, imagesByUrl);
     });
     const mediaWithPoster = document.querySelectorAll("video, audio");
     mediaWithPoster.forEach((media) => {
       const poster = media.getAttribute("poster");
       if (poster) {
         const src = this.getImageSrc(poster);
-        if (src && !seen.has(src)) {
-          seen.add(src);
-          images.push(this.createImageInfo(src, "media-poster", media));
-        }
+        if (src) imagesByUrl.set(src, this.createImageInfo(src, "media-poster", media));
       }
     });
     const icons = document.querySelectorAll('link[rel*="icon"], link[rel*="image"]');
     icons.forEach((link) => {
       const src = this.getImageSrc(link.href);
-      if (src && !seen.has(src)) {
-        seen.add(src);
-        images.push(this.createImageInfo(src, "icon", link));
-      }
+      if (src) imagesByUrl.set(src, this.createImageInfo(src, "icon", link));
     });
-    return images.filter((img) => this.isValidImage(img.src));
+    return Array.from(imagesByUrl.values()).filter((img) => this.isValidImage(img.src));
   }
   /**
    * 处理图片元素，支持多种懒加载属性
    */
-  processImageElement(img, type, seen, images) {
+  processImageElement(img, type, imagesByUrl) {
     var _a2, _b2, _c2;
     if (this.isDownloaderUiElement(img)) return;
     const src = this.getImageSrc(img.src) || this.getImageSrc((_a2 = img.dataset) == null ? void 0 : _a2.src) || this.getImageSrc((_b2 = img.dataset) == null ? void 0 : _b2.original) || this.getImageSrc((_c2 = img.dataset) == null ? void 0 : _c2.lazy) || this.getImageSrc(img.getAttribute("data-src")) || this.getImageSrc(img.getAttribute("data-original"));
-    if (src && !seen.has(src)) {
-      seen.add(src);
-      images.push(this.createImageInfo(src, type, img));
-    }
+    if (src) imagesByUrl.set(src, this.createImageInfo(src, type, img));
   }
   /**
    * 处理懒加载属性
    */
-  processLazySrc(el, seen, images) {
+  processLazySrc(el, imagesByUrl) {
     if (this.isDownloaderUiElement(el)) return;
     const lazyAttrs = [
       "data-src",
@@ -1047,10 +1027,7 @@ class ImageCapture {
           value = (_c2 = (_b2 = value.split(",")[0]) == null ? void 0 : _b2.trim()) == null ? void 0 : _c2.split(" ")[0];
         }
         const src = this.getImageSrc(value);
-        if (src && !seen.has(src)) {
-          seen.add(src);
-          images.push(this.createImageInfo(src, "lazy", el));
-        }
+        if (src) imagesByUrl.set(src, this.createImageInfo(src, "lazy", el));
       }
     });
   }
@@ -1154,14 +1131,12 @@ class ImageCapture {
     return Boolean((_a2 = element == null ? void 0 : element.closest) == null ? void 0 : _a2.call(element, DOWNLOADER_UI_SELECTOR$1));
   }
   /**
-   * 创建带同级序号的结构化 DOM path，并记录每一级祖先的内容坐标。
+   * 创建带同级序号的结构化 DOM path。
    */
   getDomMetadata(element) {
     if (!(element instanceof Element)) {
       return {
-        domPath: [],
-        pageRect: this.createEmptyRect(),
-        ancestorRects: []
+        domPath: []
       };
     }
     const nodes = [];
@@ -1171,11 +1146,8 @@ class ImageCapture {
       current = current.parentElement;
     }
     nodes.reverse();
-    const ancestorRects = nodes.map((node) => this.getContentRect(node));
     return {
-      domPath: nodes.map((node) => this.getPathSegment(node)),
-      pageRect: ancestorRects[ancestorRects.length - 1] || this.createEmptyRect(),
-      ancestorRects
+      domPath: nodes.map((node) => this.getPathSegment(node))
     };
   }
   getPathSegment(element) {
@@ -1192,39 +1164,6 @@ class ImageCapture {
     const segment = `${tagName}:nth-of-type(${siblingIndex})`;
     (_b2 = this.pathSegmentCache) == null ? void 0 : _b2.set(element, segment);
     return segment;
-  }
-  getContentRect(element) {
-    var _a2, _b2;
-    const cached = (_a2 = this.rectCache) == null ? void 0 : _a2.get(element);
-    if (cached) return cached;
-    const rect = element.getBoundingClientRect();
-    let nestedScrollTop = 0;
-    let nestedScrollLeft = 0;
-    let ancestor = element.parentElement;
-    while (ancestor) {
-      if (ancestor !== document.scrollingElement) {
-        nestedScrollTop += Number(ancestor.scrollTop || 0);
-        nestedScrollLeft += Number(ancestor.scrollLeft || 0);
-      }
-      ancestor = ancestor.parentElement;
-    }
-    const top = Number(rect.top || 0) + Number(window.scrollY || 0) + nestedScrollTop;
-    const left = Number(rect.left || 0) + Number(window.scrollX || 0) + nestedScrollLeft;
-    const width = Math.max(0, Number(rect.width || 0));
-    const height = Math.max(0, Number(rect.height || 0));
-    const contentRect = {
-      top,
-      left,
-      width,
-      height,
-      right: left + width,
-      bottom: top + height
-    };
-    (_b2 = this.rectCache) == null ? void 0 : _b2.set(element, contentRect);
-    return contentRect;
-  }
-  createEmptyRect() {
-    return { top: 0, left: 0, width: 0, height: 0, right: 0, bottom: 0 };
   }
   /**
    * 获取图片文件大小
@@ -2773,130 +2712,51 @@ function initResizable(panel) {
     minHeight: 200
   });
 }
-const MIN_COMMON_PREFIX_RATIO = 0.7;
-const ANCHOR_TOLERANCE_PX = 48;
-function numberOr(value, fallback = 0) {
-  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+const naturalCollator = new Intl.Collator(void 0, {
+  numeric: true,
+  sensitivity: "variant"
+});
+function naturalCompare(a, b) {
+  const valueA = String(a || "");
+  const valueB = String(b || "");
+  const result = naturalCollator.compare(valueA, valueB);
+  if (result !== 0 || valueA === valueB) return result;
+  return valueA < valueB ? -1 : 1;
 }
-function normalizeRect(rect = {}) {
-  const top = numberOr(rect.top);
-  const left = numberOr(rect.left);
-  const width = Math.max(0, numberOr(rect.width));
-  const height = Math.max(0, numberOr(rect.height));
+function getDomPath(image) {
+  return Array.isArray(image == null ? void 0 : image.domPath) ? image.domPath : [];
+}
+function arePathsEqual(a, b) {
+  const pathA = getDomPath(a);
+  const pathB = getDomPath(b);
+  return pathA.length === pathB.length && pathA.every((segment, index) => segment === pathB[index]);
+}
+function compareImagesByDomPath(a, b) {
+  return naturalCompare(getDomPath(a).join(">"), getDomPath(b).join(">")) || naturalCompare(a == null ? void 0 : a.src, b == null ? void 0 : b.src);
+}
+function sortImagesByDomPath(images) {
+  return Array.isArray(images) ? [...images].sort(compareImagesByDomPath) : [];
+}
+function copyImageRecord(image) {
+  const {
+    element: _element,
+    pageRect: _pageRect,
+    ancestorRects: _ancestorRects,
+    captureOrder: _captureOrder,
+    ...record
+  } = image;
   return {
-    top,
-    left,
-    width,
-    height,
-    right: numberOr(rect.right, left + width),
-    bottom: numberOr(rect.bottom, top + height)
-  };
-}
-function compareRects(a, b) {
-  const rectA = normalizeRect(a);
-  const rectB = normalizeRect(b);
-  return rectA.top - rectB.top || rectA.left - rectB.left;
-}
-function areAnchorsCompatible(a, b) {
-  const rectA = normalizeRect(a);
-  const rectB = normalizeRect(b);
-  const overlapsHorizontally = rectA.left <= rectB.right + ANCHOR_TOLERANCE_PX && rectB.left <= rectA.right + ANCHOR_TOLERANCE_PX;
-  const overlapsVertically = rectA.top <= rectB.bottom + ANCHOR_TOLERANCE_PX && rectB.top <= rectA.bottom + ANCHOR_TOLERANCE_PX;
-  return overlapsHorizontally && overlapsVertically;
-}
-function getAnchor(image, depth) {
-  var _a2;
-  return ((_a2 = image.ancestorRects) == null ? void 0 : _a2[depth - 1]) || image.pageRect || {};
-}
-function getPrefixKey(path, depth) {
-  return `${path.length}|${depth}|${path.slice(0, depth).join(">")}`;
-}
-function createDisjointSet(size) {
-  const parents = Array.from({ length: size }, (_, index) => index);
-  function find(index) {
-    let current = index;
-    while (parents[current] !== current) {
-      parents[current] = parents[parents[current]];
-      current = parents[current];
-    }
-    return current;
-  }
-  function union(a, b) {
-    const rootA = find(a);
-    const rootB = find(b);
-    if (rootA !== rootB) {
-      parents[rootB] = rootA;
-    }
-  }
-  return { find, union };
-}
-function compareImages(a, b) {
-  var _a2, _b2;
-  return compareRects(a.pageRect, b.pageRect) || String(((_a2 = a.domPath) == null ? void 0 : _a2.join(">")) || "").localeCompare(String(((_b2 = b.domPath) == null ? void 0 : _b2.join(">")) || "")) || numberOr(a.captureOrder) - numberOr(b.captureOrder);
-}
-function sortImagesByDomGroup(images) {
-  if (!Array.isArray(images) || images.length <= 1) {
-    return Array.isArray(images) ? [...images] : [];
-  }
-  const ordered = [...images].sort(
-    (a, b) => numberOr(a.captureOrder) - numberOr(b.captureOrder)
-  );
-  const disjointSet = createDisjointSet(ordered.length);
-  const prefixIndex = /* @__PURE__ */ new Map();
-  ordered.forEach((image, index) => {
-    const path = Array.isArray(image.domPath) ? image.domPath : [];
-    if (path.length === 0) return;
-    const minDepth = Math.max(1, Math.ceil(path.length * MIN_COMMON_PREFIX_RATIO));
-    for (let depth = path.length; depth >= minDepth; depth -= 1) {
-      const key = getPrefixKey(path, depth);
-      const priorIndexes = prefixIndex.get(key) || [];
-      if (priorIndexes.length === 0) {
-        continue;
-      }
-      const compatibleIndexes = priorIndexes.filter(
-        (priorIndex) => areAnchorsCompatible(getAnchor(image, depth), getAnchor(ordered[priorIndex], depth))
-      );
-      if (compatibleIndexes.length === 0) {
-        break;
-      }
-      compatibleIndexes.forEach((priorIndex) => disjointSet.union(index, priorIndex));
-      break;
-    }
-    for (let depth = path.length; depth >= minDepth; depth -= 1) {
-      const key = getPrefixKey(path, depth);
-      const indexes = prefixIndex.get(key) || [];
-      indexes.push(index);
-      prefixIndex.set(key, indexes);
-    }
-  });
-  const groups = /* @__PURE__ */ new Map();
-  ordered.forEach((image, index) => {
-    const root = disjointSet.find(index);
-    const group = groups.get(root) || [];
-    group.push(image);
-    groups.set(root, group);
-  });
-  return Array.from(groups.values()).map((group) => group.sort(compareImages)).sort((a, b) => compareImages(a[0], b[0])).flat();
-}
-function copyImageRecord(image, captureOrder) {
-  return {
-    ...image,
-    element: void 0,
-    domPath: Array.isArray(image.domPath) ? [...image.domPath] : [],
-    pageRect: normalizeRect(image.pageRect),
-    ancestorRects: Array.isArray(image.ancestorRects) ? image.ancestorRects.map(normalizeRect) : [],
-    captureOrder
+    ...record,
+    domPath: [...getDomPath(image)]
   };
 }
 class ImageCollection {
   constructor() {
     this.records = /* @__PURE__ */ new Map();
-    this.nextCaptureOrder = 0;
   }
   clear() {
     const changed = this.records.size > 0;
     this.records.clear();
-    this.nextCaptureOrder = 0;
     return { added: 0, updated: 0, changed };
   }
   replace(images) {
@@ -2913,8 +2773,7 @@ class ImageCollection {
       if (!src) continue;
       const existing = this.records.get(src);
       if (!existing) {
-        this.records.set(src, copyImageRecord(image, this.nextCaptureOrder));
-        this.nextCaptureOrder += 1;
+        this.records.set(src, copyImageRecord(image));
         added += 1;
         changed = true;
         continue;
@@ -2923,10 +2782,8 @@ class ImageCollection {
       if (!existing.width && image.width) patch.width = image.width;
       if (!existing.height && image.height) patch.height = image.height;
       if (!existing.alt && image.alt) patch.alt = image.alt;
-      if (compareRects(image.pageRect, existing.pageRect) < 0) {
-        patch.domPath = Array.isArray(image.domPath) ? [...image.domPath] : [];
-        patch.pageRect = normalizeRect(image.pageRect);
-        patch.ancestorRects = Array.isArray(image.ancestorRects) ? image.ancestorRects.map(normalizeRect) : [];
+      if (!arePathsEqual(existing, image)) {
+        patch.domPath = [...getDomPath(image)];
       }
       if (Object.keys(patch).length > 0) {
         Object.assign(existing, patch);
@@ -2937,7 +2794,7 @@ class ImageCollection {
     return { added, updated, changed };
   }
   getSortedImages() {
-    return sortImagesByDomGroup(Array.from(this.records.values()));
+    return sortImagesByDomPath(Array.from(this.records.values()));
   }
   get size() {
     return this.records.size;

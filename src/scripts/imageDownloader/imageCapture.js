@@ -12,26 +12,21 @@ export class ImageCapture {
    * @returns {Array} 图片列表
    */
   getAllImages() {
-    const images = [];
-    const seen = new Set();
-    // 同一轮中大量图片通常共享祖先，缓存可避免重复布局读取和 path 计算。
-    this.rectCache = new WeakMap();
+    const imagesByUrl = new Map();
+    // 同一轮中大量图片通常共享祖先，缓存可避免重复计算 path 片段。
     this.pathSegmentCache = new WeakMap();
 
     // 1. 获取 <img> 标签
     const imgElements = document.querySelectorAll('img');
     imgElements.forEach((img) => {
-      this.processImageElement(img, 'img', seen, images);
+      this.processImageElement(img, 'img', imagesByUrl);
     });
 
     // 2. 获取 <image> 标签 (SVG 内)
     const svgImages = document.querySelectorAll('image');
     svgImages.forEach((img) => {
       const src = this.getImageSrc(img.href?.baseVal || img.getAttribute('href'));
-      if (src && !seen.has(src)) {
-        seen.add(src);
-        images.push(this.createImageInfo(src, 'svg-image', img));
-      }
+      if (src) imagesByUrl.set(src, this.createImageInfo(src, 'svg-image', img));
     });
 
     // 3. 获取 CSS 背景图片
@@ -44,10 +39,7 @@ export class ImageCapture {
         const urls = this.extractUrls(bgImage);
         urls.forEach((url) => {
           const src = this.getImageSrc(url);
-          if (src && !seen.has(src)) {
-            seen.add(src);
-            images.push(this.createImageInfo(src, 'background', el));
-          }
+          if (src) imagesByUrl.set(src, this.createImageInfo(src, 'background', el));
         });
       }
     });
@@ -56,15 +48,12 @@ export class ImageCapture {
     const sources = document.querySelectorAll('source');
     sources.forEach((source) => {
       const src = this.getImageSrc(source.srcset?.split(',')[0]?.trim()?.split(' ')[0]);
-      if (src && !seen.has(src)) {
-        seen.add(src);
-        images.push(this.createImageInfo(src, 'source', source));
-      }
+      if (src) imagesByUrl.set(src, this.createImageInfo(src, 'source', source));
     });
 
     // 5. 获取懒加载的 data-src
     elements.forEach((el) => {
-      this.processLazySrc(el, seen, images);
+      this.processLazySrc(el, imagesByUrl);
     });
 
     // 6. 获取 <video> 和 <audio> 的 poster
@@ -73,10 +62,7 @@ export class ImageCapture {
       const poster = media.getAttribute('poster');
       if (poster) {
         const src = this.getImageSrc(poster);
-        if (src && !seen.has(src)) {
-          seen.add(src);
-          images.push(this.createImageInfo(src, 'media-poster', media));
-        }
+        if (src) imagesByUrl.set(src, this.createImageInfo(src, 'media-poster', media));
       }
     });
 
@@ -84,21 +70,18 @@ export class ImageCapture {
     const icons = document.querySelectorAll('link[rel*="icon"], link[rel*="image"]');
     icons.forEach((link) => {
       const src = this.getImageSrc(link.href);
-      if (src && !seen.has(src)) {
-        seen.add(src);
-        images.push(this.createImageInfo(src, 'icon', link));
-      }
+      if (src) imagesByUrl.set(src, this.createImageInfo(src, 'icon', link));
     });
 
     // 所有站点统一采用“最小有效性”过滤：
     // 不按域名或路径后缀做白名单判定，只排除明显无效链接。
-    return images.filter((img) => this.isValidImage(img.src));
+    return Array.from(imagesByUrl.values()).filter((img) => this.isValidImage(img.src));
   }
 
   /**
    * 处理图片元素，支持多种懒加载属性
    */
-  processImageElement(img, type, seen, images) {
+  processImageElement(img, type, imagesByUrl) {
     if (this.isDownloaderUiElement(img)) return;
 
     // 优先使用真实 URL（非空、非占位符）
@@ -106,16 +89,13 @@ export class ImageCapture {
                 this.getImageSrc(img.dataset?.original) || this.getImageSrc(img.dataset?.lazy) ||
                 this.getImageSrc(img.getAttribute('data-src')) || this.getImageSrc(img.getAttribute('data-original'));
 
-    if (src && !seen.has(src)) {
-      seen.add(src);
-      images.push(this.createImageInfo(src, type, img));
-    }
+    if (src) imagesByUrl.set(src, this.createImageInfo(src, type, img));
   }
 
   /**
    * 处理懒加载属性
    */
-  processLazySrc(el, seen, images) {
+  processLazySrc(el, imagesByUrl) {
     if (this.isDownloaderUiElement(el)) return;
 
     // 常见的懒加载属性
@@ -142,10 +122,7 @@ export class ImageCapture {
         }
         
         const src = this.getImageSrc(value);
-        if (src && !seen.has(src)) {
-          seen.add(src);
-          images.push(this.createImageInfo(src, 'lazy', el));
-        }
+        if (src) imagesByUrl.set(src, this.createImageInfo(src, 'lazy', el));
       }
     });
   }
@@ -279,14 +256,12 @@ export class ImageCapture {
   }
 
   /**
-   * 创建带同级序号的结构化 DOM path，并记录每一级祖先的内容坐标。
+   * 创建带同级序号的结构化 DOM path。
    */
   getDomMetadata(element) {
     if (!(element instanceof Element)) {
       return {
         domPath: [],
-        pageRect: this.createEmptyRect(),
-        ancestorRects: [],
       };
     }
 
@@ -298,11 +273,8 @@ export class ImageCapture {
     }
     nodes.reverse();
 
-    const ancestorRects = nodes.map((node) => this.getContentRect(node));
     return {
       domPath: nodes.map((node) => this.getPathSegment(node)),
-      pageRect: ancestorRects[ancestorRects.length - 1] || this.createEmptyRect(),
-      ancestorRects,
     };
   }
 
@@ -322,44 +294,6 @@ export class ImageCapture {
     const segment = `${tagName}:nth-of-type(${siblingIndex})`;
     this.pathSegmentCache?.set(element, segment);
     return segment;
-  }
-
-  getContentRect(element) {
-    const cached = this.rectCache?.get(element);
-    if (cached) return cached;
-
-    const rect = element.getBoundingClientRect();
-    let nestedScrollTop = 0;
-    let nestedScrollLeft = 0;
-    let ancestor = element.parentElement;
-
-    while (ancestor) {
-      if (ancestor !== document.scrollingElement) {
-        nestedScrollTop += Number(ancestor.scrollTop || 0);
-        nestedScrollLeft += Number(ancestor.scrollLeft || 0);
-      }
-      ancestor = ancestor.parentElement;
-    }
-
-    const top = Number(rect.top || 0) + Number(window.scrollY || 0) + nestedScrollTop;
-    const left = Number(rect.left || 0) + Number(window.scrollX || 0) + nestedScrollLeft;
-    const width = Math.max(0, Number(rect.width || 0));
-    const height = Math.max(0, Number(rect.height || 0));
-
-    const contentRect = {
-      top,
-      left,
-      width,
-      height,
-      right: left + width,
-      bottom: top + height,
-    };
-    this.rectCache?.set(element, contentRect);
-    return contentRect;
-  }
-
-  createEmptyRect() {
-    return { top: 0, left: 0, width: 0, height: 0, right: 0, bottom: 0 };
   }
 
   /**
