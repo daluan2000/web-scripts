@@ -6,7 +6,7 @@
 
 | 脚本 | 功能简介 | 对应的 dist 文件 |
 |------|----------|------------------|
-| Image Downloader（图片批量下载脚本） | 捕获网页中的图片，支持自动累计、原图增强、选择及批量下载 | `dist/<前缀>-imageDownloader.user.js` |
+| Image Downloader（图片批量下载脚本） | 捕获网页中的图片，支持自动累计、原图增强、选择及批量下载 （**webp自动转png/gif，支持抖音表情包动图导出**） | `dist/<前缀>-imageDownloader.user.js` |
 | Video Downloader（视频批量下载脚本） | 捕获网页视频信息并提交给本机后端，通过 yt-dlp 批量下载和展示任务进度 | `dist/<前缀>-videoDownloader.user.js` |
 
 `<前缀>` 是构建时自动生成的版本标识。安装时请选择对应脚本前缀最新的 `.user.js` 文件。
