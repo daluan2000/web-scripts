@@ -1,9 +1,31 @@
 from __future__ import annotations
 
+import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+
+def _prepare_direct_run() -> None:
+    if __name__ != "__main__":
+        return
+
+    if getattr(sys, "frozen", False):
+        runtime_dir = Path(sys.executable).resolve().parent
+    else:
+        runtime_dir = Path(__file__).resolve().parent.parent
+        runtime_dir_text = str(runtime_dir)
+        if runtime_dir_text not in sys.path:
+            sys.path.insert(0, runtime_dir_text)
+
+    os.chdir(runtime_dir)
+
+
+_prepare_direct_run()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 from app.api.routes.health import router as health_router
 from app.api.routes.tasks import router as tasks_router
@@ -51,3 +73,21 @@ async def root() -> dict:
         "env": settings.app_env,
         "docs": "/docs",
     }
+
+
+def main() -> None:
+    options: dict[str, object] = {
+        "host": settings.host,
+        "port": settings.port,
+        "log_level": settings.log_level.lower(),
+    }
+
+    if settings.ssl_certfile and settings.ssl_keyfile:
+        options["ssl_certfile"] = settings.ssl_certfile
+        options["ssl_keyfile"] = settings.ssl_keyfile
+
+    uvicorn.run(app, **options)
+
+
+if __name__ == "__main__":
+    main()

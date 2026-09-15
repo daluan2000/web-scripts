@@ -250,13 +250,28 @@ npm run dev:video
 
 videoDownloader 需要配合本机后端运行：
 
+Windows：
+
+```powershell
+cd src\scripts\videoDownloader\backend
+.\start_backend.ps1
+```
+
+Windows 打包本机后端：
+
+```powershell
+.\package.ps1
+```
+
+Linux/macOS/Git Bash/WSL：
+
 ```bash
 cd src/scripts/videoDownloader/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-uvicorn app.main:app --host 127.0.0.1 --port 8787 --reload
+python app/main.py
 ```
 
 ### 生产打包

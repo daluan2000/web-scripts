@@ -23,14 +23,61 @@ ffmpeg -version
 
 ## 安装与启动
 
+### Windows（PowerShell/CMD）
+
+Windows 不能在普通 PowerShell 或 CMD 中直接运行 `.sh`；如安装了 Git Bash 或 WSL 才能使用原脚本。Windows 原生环境可直接运行：
+
+```powershell
+cd src\scripts\videoDownloader\backend
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start_backend.ps1
+```
+
+脚本会自动创建 `.venv`、安装依赖、首次生成 `.env`，然后通过 Python 直接运行 `app/main.py`。监听地址和端口由 `.env` 中的 `VD_BACKEND_HOST`、`VD_BACKEND_PORT` 控制。
+
+```powershell
+# 跳过已有虚拟环境的依赖检查
+.\start_backend.ps1 -SkipDependencyInstall
+```
+
+也可以使用虚拟环境中的 Python 直接运行 FastAPI 入口（读取 `.env`，不启用热重载）：
+
+```powershell
+.\.venv\Scripts\python.exe .\app\main.py
+```
+
+Windows 打包：
+
+```powershell
+.\package.ps1
+```
+
+打包脚本会安装 `requirements-build.txt` 中的 PyInstaller，并生成：
+
+```text
+dist\video-downloader-backend.exe
+dist\.env.example
+```
+
+将 `.env.example` 复制为与 EXE 同目录的 `.env` 后即可配置运行。EXE 不带热重载，并会按照 `.env` 中的 `VD_BACKEND_HOST`、`VD_BACKEND_PORT` 和 HTTPS 证书配置启动。
+
+### Linux/macOS/Git Bash/WSL
+
 ```bash
 cd src/scripts/videoDownloader/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-uvicorn app.main:app --host 127.0.0.1 --port 8787 --reload
+python app/main.py
 ```
+
+也可以执行 `./start_backend.sh`。打包时运行：
+
+```bash
+./package.sh
+```
+
+脚本会自动创建 `.venv`、安装 `requirements-build.txt` 中的构建依赖，并将产物和 `.env.example` 写入 `dist/`。WSL 使用独立的 `.venv-wsl`，避免与 Windows 虚拟环境冲突。已有完整构建环境时可执行 `./package.sh --skip-dependency-install`。Windows 推荐使用上述 `package.ps1`。
 
 ## API
 
