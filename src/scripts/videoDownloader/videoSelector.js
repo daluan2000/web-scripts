@@ -45,6 +45,7 @@ function formatType(type) {
   if (type === 'm3u8') return 'HLS';
   if (type === 'dash') return 'DASH';
   if (type === 'blob') return 'BLOB';
+  if (type === 'webpage') return '网页';
   return String(type).toUpperCase();
 }
 
@@ -88,7 +89,12 @@ export class VideoSelector extends ResourceSelector {
             },
           });
           thumb.appendChild(imgEl);
-        } else if (video.type !== 'm3u8' && video.type !== 'dash' && video.type !== 'blob') {
+        } else if (
+          video.type !== 'm3u8' &&
+          video.type !== 'dash' &&
+          video.type !== 'blob' &&
+          video.type !== 'webpage'
+        ) {
           const videoEl = helpers.createElement('video', {
             src: video.src,
             preload: 'metadata',
@@ -171,6 +177,14 @@ export class VideoSelector extends ResourceSelector {
         } else if (video.type === 'm3u8') {
           info.appendChild(
             helpers.createElement('span', { className: 'vd-badge vd-badge-hls' }, 'm3u8')
+          );
+        } else if (video.type === 'dash') {
+          info.appendChild(
+            helpers.createElement('span', { className: 'vd-badge vd-badge-dash' }, 'MPD')
+          );
+        } else if (video.type === 'webpage') {
+          info.appendChild(
+            helpers.createElement('span', { className: 'vd-badge vd-badge-page' }, 'yt-dlp')
           );
         }
 

@@ -130,10 +130,12 @@ A: 请确认：
 ![视频批量下载器界面](assets/vd-downloader.png)
 
 ### 核心功能
-- 自动捕获页面中的视频资源（video/source、部分 data-*、视频直链）
+- 从页面加载开始捕获 fetch、XHR、Performance 中的媒体请求，并与 video/source、部分 data-*、视频直链合并
 - 支持选择后批量提交下载任务（FastAPI + yt-dlp）
 - 实时显示后端任务状态和进度（WebSocket，失败时自动降级轮询）
-- 支持任务级透传 Cookie / Authorization / Referer / User-Agent
+- 支持 HLS/m3u8、DASH/MPD 和常见视频直链；DASH 音视频合并通常需要安装 FFmpeg
+- 可将当前播放页直接添加为候选，由 yt-dlp 的站点解析器尝试下载
+- 支持任务级透传可读取的 Cookie、Referer 和 User-Agent
 - 快捷键 `Ctrl+Shift+V` 快速捕获
 
 ### 当前支持范围
@@ -142,9 +144,11 @@ A: 请确认：
 - 协议默认：`http://127.0.0.1:8787` + `ws://127.0.0.1:8787`
 
 ### 当前限制
-- `blob:` 资源无法直接提取源地址
+- `blob:` 本身无法提交后端；脚本会尝试捕获其背后的 m3u8、MPD 或完整视频请求
+- 只发现 TS/M4S 分片时仅显示汇总提示，不会将单个分片作为视频下载
 - DRM 受保护视频通常无法通过常规方式下载
 - 部分站点可能依赖 HttpOnly Cookie，前端无法直接读取
+- 第一期不会解析平台私有接口响应体中的音视频轨地址
 - 如 HTTPS 页面阻断本机 HTTP/WS，请切到 HTTPS/WSS 后端
 
 ---

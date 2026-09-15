@@ -6,7 +6,7 @@ import { VideoBackendClient } from '@/scripts/videoDownloader/backendClient.js';
 
 export const USERSCRIPT_HEADER = `// @name         Video Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  视频批量下载器 - 前端采集关键信息，后端执行下载
 // @match        https://*/*
 // @match        http://*/*
@@ -17,16 +17,17 @@ export const USERSCRIPT_HEADER = `// @name         Video Downloader
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_listValues
-// @grant        unsafeWindow`;
+// @grant        unsafeWindow
+// @run-at       document-start`;
 
 import styles from '@/scripts/videoDownloader/styles.css?raw';
-addStyle(styles);
 
 import { initFloatingButton, showPanel, hidePanel, togglePanel } from '@/scripts/videoDownloader/floatingButton.js';
 import { VideoCapture } from '@/scripts/videoDownloader/videoCapture.js';
 import { VideoSelector } from '@/scripts/videoDownloader/videoSelector.js';
 import { createPanel } from '@/scripts/videoDownloader/panel.js';
 import { getActiveEnhancerName, getEnhancerDisplayName } from '@/scripts/videoDownloader/videoEnhancers.js';
+import { createNetworkMediaCapture } from '@/scripts/videoDownloader/networkMediaCapture.js';
 
 const SHORTCUT_KEY = 'v';
 const DOWNLOADED_HISTORY_KEY =
@@ -55,6 +56,8 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
   const historyRecordedTaskIds = new Set();
   const taskPollers = new Map();
   const handledCaptureRequestIds = new Set();
+  const pageWindow = typeof unsafeWindow === 'undefined' ? window : unsafeWindow;
+  const networkMediaCapture = createNetworkMediaCapture({ pageWindow });
   let shortcutEnabled = true;
   let wsHandle = null;
   let wsConnected = false;
@@ -467,6 +470,64 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
     return windows;
   }
 
+  function normalizeSegmentSummary(summary) {
+    return {
+      ts: Math.max(0, Number(summary?.ts || 0) || 0),
+      m4s: Math.max(0, Number(summary?.m4s || 0) || 0),
+      blob: Math.max(0, Number(summary?.blob || 0) || 0),
+    };
+  }
+
+  function mergeSegmentSummary(target, source) {
+    const normalized = normalizeSegmentSummary(source);
+    target.ts += normalized.ts;
+    target.m4s += normalized.m4s;
+    target.blob += normalized.blob;
+    return target;
+  }
+
+  function collapseBlobVideos(videos) {
+    const realMediaFrames = new Set();
+    videos.forEach((video) => {
+      if (video?.type !== 'blob' && video?.supported !== false) {
+        realMediaFrames.add(String(video?.frameUrl || ''));
+      }
+    });
+
+    const firstBlobByFrame = new Map();
+    const output = [];
+
+    videos.forEach((video) => {
+      if (video?.type !== 'blob') {
+        output.push(video);
+        return;
+      }
+
+      const frameKey = String(video?.frameUrl || '');
+      if (realMediaFrames.has(frameKey)) return;
+
+      const existing = firstBlobByFrame.get(frameKey);
+      if (existing) {
+        existing.blobCount = Number(existing.blobCount || 1) + Number(video?.blobCount || 1);
+        existing.unsupportedReason = `发现 ${existing.blobCount} 个 blob，但尚未捕获真实媒体地址`;
+        return;
+      }
+
+      const blobCount = Math.max(1, Number(video?.blobCount || 1) || 1);
+      const collapsed = {
+        ...video,
+        blobCount,
+        unsupportedReason: blobCount > 1
+          ? `发现 ${blobCount} 个 blob，但尚未捕获真实媒体地址`
+          : (video.unsupportedReason || 'blob 资源无法直接提取源地址'),
+      };
+      firstBlobByFrame.set(frameKey, collapsed);
+      output.push(collapsed);
+    });
+
+    return output;
+  }
+
   function broadcastCaptureRequestToChildFrames(requestId) {
     const payload = {
       channel: FRAME_CAPTURE_CHANNEL,
@@ -483,14 +544,22 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
     });
   }
 
-  function captureCurrentFrameVideos() {
+  function captureCurrentFrameReport() {
     const capture = new VideoCapture();
-    const videos = capture.getAllVideos();
-    return videos.map((video) => ({
+    const networkSnapshot = networkMediaCapture.getSnapshot();
+    const videos = dedupeCapturedVideos([
+      ...capture.getAllVideos(),
+      ...networkSnapshot.videos,
+    ]).map((video) => ({
       ...video,
       frameUrl: window.location.href,
       frameTitle: document.title || '',
     }));
+
+    return {
+      videos: collapseBlobVideos(videos),
+      segmentSummary: normalizeSegmentSummary(networkSnapshot.segmentSummary),
+    };
   }
 
   function normalizeCapturedVideo(video, frameUrl = '', frameTitle = '') {
@@ -507,6 +576,17 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
   function pickBetterVideo(existing, candidate) {
     if (!existing) return candidate;
+
+    if (candidate?.type === 'blob' && existing?.type === 'blob') {
+      return {
+        ...existing,
+        ...candidate,
+        blobCount: Math.max(
+          Number(existing?.blobCount || 1),
+          Number(candidate?.blobCount || 1)
+        ),
+      };
+    }
 
     if (candidate?.supported && existing?.supported === false) {
       return candidate;
@@ -543,8 +623,10 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
   async function captureVideosFromAllFrames(timeoutMs = FRAME_CAPTURE_TIMEOUT_MS) {
     const requestId = `vd_capture_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    const localVideos = captureCurrentFrameVideos();
+    const localReport = captureCurrentFrameReport();
+    const localVideos = localReport.videos;
     const collected = [...localVideos];
+    const segmentSummary = normalizeSegmentSummary(localReport.segmentSummary);
 
     const onMessage = (event) => {
       const data = event?.data;
@@ -558,6 +640,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
           collected.push(normalized);
         }
       });
+      mergeSegmentSummary(segmentSummary, data.segmentSummary);
     };
 
     window.addEventListener('message', onMessage);
@@ -570,13 +653,28 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
       window.removeEventListener('message', onMessage);
     }
 
-    const merged = dedupeCapturedVideos(collected);
+    const merged = collapseBlobVideos(dedupeCapturedVideos(collected));
     logger.info('跨 frame 捕获完成', {
       localCount: localVideos.length,
       totalCount: merged.length,
       remoteCount: Math.max(0, merged.length - localVideos.length),
+      segmentSummary,
     });
-    return merged;
+    return { videos: merged, segmentSummary };
+  }
+
+  function formatCaptureResult(report) {
+    const videos = Array.isArray(report?.videos) ? report.videos : [];
+    const summary = normalizeSegmentSummary(report?.segmentSummary);
+    const segmentCount = summary.ts + summary.m4s;
+    const hasManifest = videos.some((video) => video?.type === 'm3u8' || video?.type === 'dash');
+    let message = `已捕获 ${videos.length} 个视频资源`;
+
+    if (segmentCount > 0 && !hasManifest) {
+      message += `；发现 ${segmentCount} 个分片请求，但尚未找到清单`;
+    }
+
+    return message;
   }
 
   function setupFrameCaptureBridge() {
@@ -591,8 +689,11 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
       handledCaptureRequestIds.add(requestId);
 
       let videos = [];
+      let segmentSummary = normalizeSegmentSummary();
       try {
-        videos = captureCurrentFrameVideos();
+        const report = captureCurrentFrameReport();
+        videos = report.videos;
+        segmentSummary = report.segmentSummary;
       } catch (error) {
         logger.warn('子 frame 捕获视频失败', error);
       }
@@ -609,6 +710,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
             frameUrl: window.location.href,
             frameTitle: document.title || '',
             videos,
+            segmentSummary,
           },
           '*'
         );
@@ -639,9 +741,10 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
         setStatusText(statusText, '正在跨 frame 捕获视频...');
 
         try {
-          currentVideos = await captureVideosFromAllFrames();
+          const report = await captureVideosFromAllFrames();
+          currentVideos = report.videos;
           videoSelector.render(currentVideos);
-          setStatusText(statusText, `已捕获 ${currentVideos.length} 个视频资源`);
+          setStatusText(statusText, formatCaptureResult(report));
         } catch (error) {
           logger.error('快捷键捕获视频失败', error);
           setStatusText(statusText, `捕获失败: ${error?.message || '未知错误'}`);
@@ -713,13 +816,14 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
   async function init() {
     logger.info('videoDownloader 初始化开始', { logLevel: config.logLevel });
 
+    addStyle(styles);
     const panel = createPanel();
 
     const activeEnhancer = getActiveEnhancerName();
     const note = panel.querySelector('.vd-panel-note');
     if (activeEnhancer && note) {
       const displayName = getEnhancerDisplayName(activeEnhancer);
-      note.textContent = `支持直链视频与 m3u8 基础下载，当前来源策略：${displayName}`;
+      note.textContent = `支持网络捕获、直链、HLS 与 DASH，当前来源策略：${displayName}`;
     }
 
     initFloatingButton({ onToggle: togglePanel });
@@ -733,6 +837,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
     const cleanupPartDirsBtn = panel.querySelector('#vd-cleanup-parts');
     const clearStorageBtn = panel.querySelector('#vd-clear-storage');
     const captureBtn = panel.querySelector('#vd-capture');
+    const addPageBtn = panel.querySelector('#vd-add-page');
     const reconnectBtn = panel.querySelector('#vd-reconnect');
     const backendStatusEl = panel.querySelector('#vd-backend-status');
     const statusText = panel.querySelector('.vd-status');
@@ -755,19 +860,41 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
     setupShortcutKey(videoSelector, statusText);
 
-      captureBtn.addEventListener('click', async () => {
+    captureBtn.addEventListener('click', async () => {
       logger.info('开始手动捕获视频');
 
-        setStatusText(statusText, '正在跨 frame 捕获视频...');
-        try {
-          currentVideos = await captureVideosFromAllFrames();
-          videoSelector.render(currentVideos);
-          setStatusText(statusText, `已捕获 ${currentVideos.length} 个视频资源`);
-          logger.info('手动捕获完成', { count: currentVideos.length });
-        } catch (error) {
-          logger.error('手动捕获失败', error);
-          setStatusText(statusText, `捕获失败: ${error?.message || '未知错误'}`);
-        }
+      setStatusText(statusText, '正在跨 frame 捕获视频...');
+      try {
+        const report = await captureVideosFromAllFrames();
+        currentVideos = report.videos;
+        videoSelector.render(currentVideos);
+        setStatusText(statusText, formatCaptureResult(report));
+        logger.info('手动捕获完成', { count: currentVideos.length });
+      } catch (error) {
+        logger.error('手动捕获失败', error);
+        setStatusText(statusText, `捕获失败: ${error?.message || '未知错误'}`);
+      }
+    });
+
+    addPageBtn.addEventListener('click', () => {
+      const pageCandidate = {
+        src: window.location.href,
+        type: 'webpage',
+        captureSource: 'page-url',
+        mimeType: 'text/html',
+        title: document.title || '',
+        fileName: document.title || 'video',
+        duration: 0,
+        width: 0,
+        height: 0,
+        poster: '',
+        supported: true,
+        frameUrl: window.location.href,
+        frameTitle: document.title || '',
+      };
+      currentVideos = dedupeCapturedVideos([...currentVideos, pageCandidate]);
+      videoSelector.render(currentVideos);
+      setStatusText(statusText, '已添加当前页面，可由 yt-dlp 尝试解析');
     });
 
     selectAllBtn.addEventListener('click', () => {

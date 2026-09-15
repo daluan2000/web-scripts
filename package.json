@@ -10,6 +10,7 @@
     "build:video": "node scripts/buildUserscripts.js videoDownloader",
     "build": "node scripts/buildUserscripts.js",
     "test:image": "node --test src/scripts/imageDownloader/tests/*.test.js",
+    "test:video": "node --test src/scripts/videoDownloader/tests/*.test.js",
     "preview": "npm run build"
   },
   "devDependencies": {
