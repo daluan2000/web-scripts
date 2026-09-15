@@ -155,3 +155,35 @@ test('replace clears the previous snapshot before sorting the new one', () => {
     ['https://img.test/new.jpg']
   );
 });
+
+test('updateDimensions writes valid dimensions and is idempotent', () => {
+  const collection = new ImageCollection();
+  collection.merge([image('https://img.test/a.jpg', 1)]);
+
+  assert.equal(collection.updateDimensions('https://img.test/a.jpg', 640, 480), true);
+  assert.equal(collection.updateDimensions('https://img.test/a.jpg', 640, 480), false);
+  assert.equal(collection.updateDimensions('https://img.test/a.jpg', 0, 480), false);
+  assert.equal(collection.updateDimensions('https://img.test/missing.jpg', 10, 10), false);
+  assert.deepEqual(
+    collection.getSortedImages().map(({ src, width, height }) => ({ src, width, height })),
+    [{ src: 'https://img.test/a.jpg', width: 640, height: 480 }]
+  );
+});
+
+test('Bilibili images with different output formats remain independent', () => {
+  const collection = new ImageCollection();
+  const result = collection.merge([
+    image('https://i1.hdslb.com/bfs/static/jinkela/long/images/wlpip-playing-active.gif@3840w.avif', 1),
+    image('https://i1.hdslb.com/bfs/static/jinkela/long/images/wlpip-playing-active.gif@3840w.webp', 2),
+  ]);
+
+  assert.deepEqual(result, { added: 2, updated: 0, changed: true });
+  assert.equal(collection.size, 2);
+  assert.deepEqual(
+    collection.getSortedImages().map((item) => item.src),
+    [
+      'https://i1.hdslb.com/bfs/static/jinkela/long/images/wlpip-playing-active.gif@3840w.avif',
+      'https://i1.hdslb.com/bfs/static/jinkela/long/images/wlpip-playing-active.gif@3840w.webp',
+    ]
+  );
+});

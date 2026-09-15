@@ -22,6 +22,7 @@ export const config = {
     storageKeys: {
       downloadHistory: 'imageDownloader_download_history',
       gifQualityMode: 'imageDownloader_gif_quality_mode',
+      sizeFilter: 'imageDownloader_size_filter',
     },
     autoCapture: {
       minScanInterval: 200,

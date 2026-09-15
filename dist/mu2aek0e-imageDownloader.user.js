@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.2
 // @description  图片批量下载器 - 捕获页面图片并支持批量下载
 // @match        https://*/*
 // @match        http://*/*
@@ -13,7 +13,7 @@
 // @grant        GM_download
 // ==/UserScript==
 
-var _a, _b, _c, _d;
+var _a, _b, _c, _d, _e, _f;
 function createElement(tag, attrs = {}, html = "", text = "") {
   const element = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -52,7 +52,8 @@ const config = {
   imageDownloader: {
     storageKeys: {
       downloadHistory: "imageDownloader_download_history",
-      gifQualityMode: "imageDownloader_gif_quality_mode"
+      gifQualityMode: "imageDownloader_gif_quality_mode",
+      sizeFilter: "imageDownloader_size_filter"
     },
     autoCapture: {
       minScanInterval: 200,
@@ -363,6 +364,150 @@ const styles = `/**
 }
 
 /* ===========================
+   尺寸筛选
+   =========================== */
+.id-size-filter {
+  padding: 10px 16px 12px;
+  background: #fbfcff;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 12px;
+  color: #555;
+}
+
+.id-size-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.id-size-filter-title {
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.id-size-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.id-size-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.id-size-filter-group-label {
+  color: #4b5563;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.id-size-range-control {
+  display: grid;
+  grid-template-columns: 58px 20px 58px 24px;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dfe3eb;
+  border-radius: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.id-size-range-control:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+}
+
+.id-size-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 5px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: #374151;
+  text-align: center;
+  outline: none;
+  appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+.id-size-input::placeholder {
+  color: #9ca3af;
+  font-size: 10px;
+  opacity: 1;
+}
+
+.id-size-input::-webkit-inner-spin-button,
+.id-size-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.id-size-input.is-invalid {
+  background: #fff5f5;
+  box-shadow: inset 0 0 0 1px #e53e3e;
+}
+
+.id-size-range-separator {
+  color: #8491a5;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  user-select: none;
+}
+
+.id-size-unit {
+  padding-right: 8px;
+  color: #9ca3af;
+  font-size: 11px;
+  user-select: none;
+}
+
+.id-size-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.id-include-unknown-label {
+  padding: 6px 9px;
+  background: #fff;
+}
+
+.id-size-filter-reset {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.id-size-filter-summary {
+  color: #667eea;
+  white-space: nowrap;
+}
+
+.id-size-filter-error {
+  display: none;
+  margin-top: 7px;
+  color: #c53030;
+  font-size: 11px;
+}
+
+.id-size-filter-error.is-visible {
+  display: block;
+}
+
+/* ===========================
    图片网格
    =========================== */
 .id-image-grid {
@@ -568,6 +713,14 @@ const styles = `/**
     padding: 8px 12px;
   }
 
+  .id-size-filter {
+    padding: 8px 12px;
+  }
+
+  .id-size-filter-controls {
+    gap: 8px;
+  }
+
   .id-btn {
     padding: 6px 10px;
     font-size: 12px;
@@ -606,6 +759,24 @@ const styles = `/**
   .id-input {
     flex: 1;
     width: auto;
+  }
+
+  .id-size-filter-header {
+    margin-bottom: 7px;
+  }
+
+  .id-size-filter-group {
+    flex-basis: 100%;
+  }
+
+  .id-size-filter-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .id-include-unknown-label {
+    flex: 1;
+    justify-content: center;
   }
 }
 `;
@@ -932,6 +1103,22 @@ function enhanceImageUrl(url) {
   }
   return url;
 }
+function normalizeCapturedImageUrl(url, baseUrl) {
+  if (!url || typeof url !== "string") return null;
+  try {
+    return new URL(url, baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+function getImageDedupKey(url) {
+  if (!url || typeof url !== "string") return "";
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
+}
 const DOWNLOADER_UI_SELECTOR$1 = "#id-panel, #id-floating-btn";
 class ImageCapture {
   /**
@@ -994,7 +1181,7 @@ class ImageCapture {
   processImageElement(img, type, imagesByUrl) {
     var _a2, _b2, _c2;
     if (this.isDownloaderUiElement(img)) return;
-    const src = this.getImageSrc(img.src) || this.getImageSrc((_a2 = img.dataset) == null ? void 0 : _a2.src) || this.getImageSrc((_b2 = img.dataset) == null ? void 0 : _b2.original) || this.getImageSrc((_c2 = img.dataset) == null ? void 0 : _c2.lazy) || this.getImageSrc(img.getAttribute("data-src")) || this.getImageSrc(img.getAttribute("data-original"));
+    const src = this.getImageSrc(img.currentSrc) || this.getImageSrc(img.src) || this.getImageSrc((_a2 = img.dataset) == null ? void 0 : _a2.src) || this.getImageSrc((_b2 = img.dataset) == null ? void 0 : _b2.original) || this.getImageSrc((_c2 = img.dataset) == null ? void 0 : _c2.lazy) || this.getImageSrc(img.getAttribute("data-src")) || this.getImageSrc(img.getAttribute("data-original"));
     if (src) imagesByUrl.set(src, this.createImageInfo(src, type, img));
   }
   /**
@@ -1060,6 +1247,8 @@ class ImageCapture {
       return null;
     }
     let cleanUrl = url.split("#")[0].trim();
+    cleanUrl = normalizeCapturedImageUrl(cleanUrl, window.location.href);
+    if (!cleanUrl) return null;
     cleanUrl = enhanceImageUrl(cleanUrl);
     return cleanUrl;
   }
@@ -1112,12 +1301,14 @@ class ImageCapture {
    */
   createImageInfo(src, type, element) {
     const domMetadata = this.getDomMetadata(element);
+    const naturalWidth = Number(element == null ? void 0 : element.naturalWidth);
+    const naturalHeight = Number(element == null ? void 0 : element.naturalHeight);
     return {
       src,
       type,
       alt: (element == null ? void 0 : element.alt) || "",
-      width: (element == null ? void 0 : element.naturalWidth) || (element == null ? void 0 : element.width) || 0,
-      height: (element == null ? void 0 : element.naturalHeight) || (element == null ? void 0 : element.height) || 0,
+      width: Number.isFinite(naturalWidth) && naturalWidth > 0 ? naturalWidth : 0,
+      height: Number.isFinite(naturalHeight) && naturalHeight > 0 ? naturalHeight : 0,
       fileSize: null,
       element,
       ...domMetadata
@@ -1403,6 +1594,8 @@ class ImageSelector extends ResourceSelector {
    * @param {Function} options.onSelectionChange - 选择变化回调
    */
   constructor(options) {
+    const onDimensionsResolved = options.onDimensionsResolved || (() => {
+    });
     super({
       ...options,
       emptyText: "未找到图片",
@@ -1416,20 +1609,30 @@ class ImageSelector extends ResourceSelector {
       },
       createThumbnail: (img, index, helpers) => {
         const thumb = helpers.createElement("div", { className: "id-image-thumb" });
+        let usingFallback = false;
         const imgEl = helpers.createElement("img", {
           src: img.src,
           alt: img.alt || `图片 ${index + 1}`,
           loading: "lazy",
           onerror: () => {
+            if (usingFallback) return;
+            usingFallback = true;
             imgEl.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f0f0f0" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="%23999" font-size="12">加载失败</text></svg>';
           }
         });
         imgEl.onload = () => {
-          if (imgEl.naturalWidth > 0) {
+          var _a2;
+          if (!usingFallback && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+            const width = imgEl.naturalWidth;
+            const height = imgEl.naturalHeight;
+            const changed = img.width !== width || img.height !== height;
+            if (changed) onDimensionsResolved(img.src, width, height);
             helpers.updateResource({
-              width: imgEl.naturalWidth,
-              height: imgEl.naturalHeight
+              width,
+              height
             });
+            const sizeEl = (_a2 = thumb.closest(".id-image-item")) == null ? void 0 : _a2.querySelector(".id-size");
+            if (sizeEl) sizeEl.textContent = `${width}×${height}`;
           }
         };
         thumb.appendChild(imgEl);
@@ -1485,6 +1688,17 @@ class ImageSelector extends ResourceSelector {
    */
   getSelectedImages() {
     return this.getSelectedResources();
+  }
+  updateDimensions(src, width, height) {
+    var _a2;
+    const index = this.resources.findIndex((image2) => (image2 == null ? void 0 : image2.src) === src);
+    if (index < 0) return false;
+    const image = this.resources[index];
+    image.width = width;
+    image.height = height;
+    const sizeEl = (_a2 = this.grid.querySelector(`[data-index="${index}"]`)) == null ? void 0 : _a2.querySelector(".id-size");
+    if (sizeEl) sizeEl.textContent = `${width}×${height}`;
+    return true;
   }
 }
 var X = { trailer: 59 };
@@ -2675,6 +2889,40 @@ function createPanel() {
         <input type="text" id="id-prefix" class="id-input" placeholder="如: photo" />
       </label>
     </div>
+    <div class="id-size-filter" aria-label="图片尺寸筛选">
+      <div class="id-size-filter-header">
+        <span class="id-size-filter-title">尺寸筛选</span>
+        <span class="id-size-filter-summary" id="id-size-filter-summary">展示 0/0 · 尺寸未知 0</span>
+      </div>
+      <div class="id-size-filter-controls">
+        <div class="id-size-filter-group">
+          <span class="id-size-filter-group-label">宽度</span>
+          <div class="id-size-range-control">
+            <input type="number" id="id-min-width" class="id-size-input" min="1" step="1" placeholder="最小" aria-label="最小宽度" />
+            <span class="id-size-range-separator">至</span>
+            <input type="number" id="id-max-width" class="id-size-input" min="1" step="1" placeholder="最大" aria-label="最大宽度" />
+            <span class="id-size-unit">px</span>
+          </div>
+        </div>
+        <div class="id-size-filter-group">
+          <span class="id-size-filter-group-label">高度</span>
+          <div class="id-size-range-control">
+            <input type="number" id="id-min-height" class="id-size-input" min="1" step="1" placeholder="最小" aria-label="最小高度" />
+            <span class="id-size-range-separator">至</span>
+            <input type="number" id="id-max-height" class="id-size-input" min="1" step="1" placeholder="最大" aria-label="最大高度" />
+            <span class="id-size-unit">px</span>
+          </div>
+        </div>
+        <div class="id-size-filter-actions">
+          <label class="id-switch-label id-include-unknown-label" title="尺寸未知的图片不受宽高条件限制">
+            <input type="checkbox" id="id-include-unknown" checked />
+            包含未知尺寸
+          </label>
+          <button type="button" class="id-btn id-size-filter-reset" id="id-reset-size-filter">重置</button>
+        </div>
+      </div>
+      <span class="id-size-filter-error" id="id-size-filter-error" role="alert"></span>
+    </div>
     <div class="id-image-grid"></div>
     <div class="id-panel-footer">
       <span class="id-status">点击「捕获图片」开始</span>
@@ -2771,9 +3019,10 @@ class ImageCollection {
     for (const image of Array.isArray(images) ? images : []) {
       const src = typeof (image == null ? void 0 : image.src) === "string" ? image.src : "";
       if (!src) continue;
-      const existing = this.records.get(src);
+      const dedupKey = getImageDedupKey(src);
+      const existing = this.records.get(dedupKey);
       if (!existing) {
-        this.records.set(src, copyImageRecord(image));
+        this.records.set(dedupKey, copyImageRecord(image));
         added += 1;
         changed = true;
         continue;
@@ -2795,6 +3044,20 @@ class ImageCollection {
   }
   getSortedImages() {
     return sortImagesByDomPath(Array.from(this.records.values()));
+  }
+  updateDimensions(src, width, height) {
+    const record = this.records.get(getImageDedupKey(src));
+    const nextWidth = Number(width);
+    const nextHeight = Number(height);
+    if (!record || !Number.isFinite(nextWidth) || nextWidth <= 0 || !Number.isFinite(nextHeight) || nextHeight <= 0) {
+      return false;
+    }
+    if (record.width === nextWidth && record.height === nextHeight) {
+      return false;
+    }
+    record.width = nextWidth;
+    record.height = nextHeight;
+    return true;
   }
   get size() {
     return this.records.size;
@@ -2912,6 +3175,198 @@ class AutoCaptureController {
     }
   }
 }
+const DEFAULT_SIZE_FILTER = Object.freeze({
+  minWidth: null,
+  maxWidth: null,
+  minHeight: null,
+  maxHeight: null,
+  includeUnknown: true
+});
+const DIMENSION_KEYS = ["minWidth", "maxWidth", "minHeight", "maxHeight"];
+function isKnownImageSize(image) {
+  return Number.isFinite(image == null ? void 0 : image.width) && image.width > 0 && Number.isFinite(image == null ? void 0 : image.height) && image.height > 0;
+}
+function parseBound(value) {
+  if (value === null || value === void 0 || String(value).trim() === "") {
+    return { valid: true, value: null };
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) {
+    return { valid: false, value: null };
+  }
+  return { valid: true, value: number };
+}
+function validateSizeFilter(input) {
+  const errors = {};
+  const settings = {};
+  for (const key of DIMENSION_KEYS) {
+    const parsed = parseBound(input == null ? void 0 : input[key]);
+    if (!parsed.valid) {
+      errors[key] = "请输入大于 0 的整数";
+    }
+    settings[key] = parsed.value;
+  }
+  if (typeof (input == null ? void 0 : input.includeUnknown) !== "boolean") {
+    errors.includeUnknown = "未知尺寸选项无效";
+  }
+  settings.includeUnknown = (input == null ? void 0 : input.includeUnknown) === true;
+  if (settings.minWidth !== null && settings.maxWidth !== null && settings.minWidth > settings.maxWidth) {
+    errors.minWidth = "宽度最小值不能大于最大值";
+    errors.maxWidth = "宽度最小值不能大于最大值";
+  }
+  if (settings.minHeight !== null && settings.maxHeight !== null && settings.minHeight > settings.maxHeight) {
+    errors.minHeight = "高度最小值不能大于最大值";
+    errors.maxHeight = "高度最小值不能大于最大值";
+  }
+  return {
+    valid: Object.keys(errors).length === 0,
+    settings: Object.keys(errors).length === 0 ? settings : null,
+    errors
+  };
+}
+function normalizeStoredSizeFilter(value) {
+  const validation = validateSizeFilter(value);
+  return validation.valid ? validation.settings : { ...DEFAULT_SIZE_FILTER };
+}
+function isSizeFilterActive(settings) {
+  return DIMENSION_KEYS.some((key) => (settings == null ? void 0 : settings[key]) !== null) || (settings == null ? void 0 : settings.includeUnknown) === false;
+}
+function filterImagesBySize(images, settings) {
+  const list = Array.isArray(images) ? images : [];
+  const filter = normalizeStoredSizeFilter(settings);
+  return list.filter((image) => {
+    if (!isKnownImageSize(image)) return filter.includeUnknown;
+    if (filter.minWidth !== null && image.width < filter.minWidth) return false;
+    if (filter.maxWidth !== null && image.width > filter.maxWidth) return false;
+    if (filter.minHeight !== null && image.height < filter.minHeight) return false;
+    if (filter.maxHeight !== null && image.height > filter.maxHeight) return false;
+    return true;
+  });
+}
+function defaultImageLoader(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight
+      });
+    };
+    image.onerror = () => reject(new Error("图片加载失败"));
+    image.src = url;
+  });
+}
+function withTimeout(promise, timeout) {
+  let timer = null;
+  const timeoutPromise = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error("图片尺寸识别超时")), timeout);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer !== null) clearTimeout(timer);
+  });
+}
+class ImageDimensionResolver {
+  constructor(options = {}) {
+    this.concurrency = Math.floor(Math.max(1, Number(options.concurrency) || 4));
+    this.timeout = Math.max(1, Number(options.timeout) || 15e3);
+    this.loadImage = options.loadImage || defaultImageLoader;
+    this.onResolved = options.onResolved || (() => {
+    });
+    this.onProgress = options.onProgress || (() => {
+    });
+    this.queue = [];
+    this.queuedUrls = /* @__PURE__ */ new Set();
+    this.activeUrls = /* @__PURE__ */ new Set();
+    this.attemptedUrls = /* @__PURE__ */ new Set();
+    this.resolvedCache = /* @__PURE__ */ new Map();
+    this.generation = 0;
+    this.activeCount = 0;
+    this.currentActiveCount = 0;
+    this.total = 0;
+    this.completed = 0;
+  }
+  enqueue(images) {
+    for (const image of Array.isArray(images) ? images : []) {
+      const src = typeof (image == null ? void 0 : image.src) === "string" ? image.src : "";
+      if (!src || isKnownImageSize(image)) continue;
+      const cached = this.resolvedCache.get(src);
+      if (cached) {
+        this.onResolved(src, cached.width, cached.height);
+        continue;
+      }
+      if (this.attemptedUrls.has(src) || this.queuedUrls.has(src) || this.activeUrls.has(src)) {
+        continue;
+      }
+      this.attemptedUrls.add(src);
+      this.queuedUrls.add(src);
+      this.queue.push({ src, generation: this.generation });
+      this.total += 1;
+    }
+    this.emitProgress();
+    this.pump();
+  }
+  pump() {
+    while (this.activeCount < this.concurrency && this.queue.length > 0) {
+      const task = this.queue.shift();
+      this.queuedUrls.delete(task.src);
+      if (task.generation !== this.generation) continue;
+      this.activeCount += 1;
+      this.currentActiveCount += 1;
+      this.activeUrls.add(task.src);
+      this.runTask(task);
+    }
+    this.emitProgress();
+  }
+  async runTask(task) {
+    try {
+      const dimensions = await withTimeout(
+        Promise.resolve().then(() => this.loadImage(task.src)),
+        this.timeout
+      );
+      if (task.generation !== this.generation) return;
+      const width = Number(dimensions == null ? void 0 : dimensions.width);
+      const height = Number(dimensions == null ? void 0 : dimensions.height);
+      if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+        throw new Error("图片尺寸无效");
+      }
+      const result = { width, height };
+      this.resolvedCache.set(task.src, result);
+      this.onResolved(task.src, width, height);
+    } catch {
+    } finally {
+      this.activeCount -= 1;
+      this.activeUrls.delete(task.src);
+      if (task.generation === this.generation) {
+        this.currentActiveCount -= 1;
+        this.completed += 1;
+      }
+      this.emitProgress();
+      this.pump();
+    }
+  }
+  getProgress() {
+    return {
+      total: this.total,
+      completed: this.completed,
+      active: this.currentActiveCount,
+      pending: this.queue.length + this.currentActiveCount
+    };
+  }
+  emitProgress() {
+    this.onProgress(this.getProgress());
+  }
+  reset() {
+    this.generation += 1;
+    this.queue = [];
+    this.queuedUrls.clear();
+    this.attemptedUrls.clear();
+    this.resolvedCache.clear();
+    this.currentActiveCount = 0;
+    this.total = 0;
+    this.completed = 0;
+    this.emitProgress();
+  }
+}
 function isTopWindow() {
   try {
     return window.top === window.self;
@@ -2925,6 +3380,7 @@ if (isTopWindow()) {
 const SHORTCUT_KEY = "i";
 const DOWNLOADED_HISTORY_KEY = (_b = (_a = config.imageDownloader) == null ? void 0 : _a.storageKeys) == null ? void 0 : _b.downloadHistory;
 const GIF_QUALITY_MODE_KEY = (_d = (_c = config.imageDownloader) == null ? void 0 : _c.storageKeys) == null ? void 0 : _d.gifQualityMode;
+const SIZE_FILTER_KEY = (_f = (_e = config.imageDownloader) == null ? void 0 : _e.storageKeys) == null ? void 0 : _f.sizeFilter;
 function normalizeGifQualityMode(mode) {
   return mode === "low" ? "low" : "high";
 }
@@ -2940,6 +3396,7 @@ function normalizeGifQualityMode(mode) {
   let selectedImages = [];
   const downloadHistory = [];
   let useHighQualityGif = true;
+  let sizeFilter = { ...DEFAULT_SIZE_FILTER };
   let shortcutEnabled = true;
   let isDownloading = false;
   const imageCapture = new ImageCapture();
@@ -3030,9 +3487,33 @@ function normalizeGifQualityMode(mode) {
     const autoCaptureLabel = panel.querySelector("#id-auto-capture-label");
     const prefixInput = panel.querySelector("#id-prefix");
     const gifQualityToggle = panel.querySelector("#id-gif-quality-toggle");
+    const minWidthInput = panel.querySelector("#id-min-width");
+    const maxWidthInput = panel.querySelector("#id-max-width");
+    const minHeightInput = panel.querySelector("#id-min-height");
+    const maxHeightInput = panel.querySelector("#id-max-height");
+    const includeUnknownToggle = panel.querySelector("#id-include-unknown");
+    const resetSizeFilterBtn = panel.querySelector("#id-reset-size-filter");
+    const sizeFilterSummary = panel.querySelector("#id-size-filter-summary");
+    const sizeFilterError = panel.querySelector("#id-size-filter-error");
     const statusText = panel.querySelector(".id-status");
     const downloadedCountText = panel.querySelector("#id-downloaded-count");
+    const sizeInputs = {
+      minWidth: minWidthInput,
+      maxWidth: maxWidthInput,
+      minHeight: minHeightInput,
+      maxHeight: maxHeightInput
+    };
+    let filterInputTimer = null;
+    let filterRenderTimer = null;
     await loadDownloadHistory(downloadedCountText);
+    try {
+      const storedFilter = await getItem(SIZE_FILTER_KEY, DEFAULT_SIZE_FILTER);
+      sizeFilter = normalizeStoredSizeFilter(storedFilter);
+    } catch (error) {
+      logger.warn("读取尺寸筛选设置失败，使用默认设置", error);
+      sizeFilter = { ...DEFAULT_SIZE_FILTER };
+    }
+    syncSizeFilterControls();
     try {
       const storedMode = normalizeGifQualityMode(await getItem(GIF_QUALITY_MODE_KEY, "high"));
       useHighQualityGif = storedMode !== "low";
@@ -3052,19 +3533,119 @@ function normalizeGifQualityMode(mode) {
         statusText.textContent = useHighQualityGif ? "动态图画质：清晰（更慢、更大）" : "动态图画质：标准（更快、更小）";
       });
     }
-    const imageSelector = new ImageSelector({
+    let imageSelector = null;
+    const dimensionResolver = new ImageDimensionResolver({
+      concurrency: 4,
+      timeout: 15e3,
+      onResolved: (src, width, height) => {
+        handleDimensionsResolved(src, width, height);
+      }
+    });
+    imageSelector = new ImageSelector({
       grid,
       onSelectionChange: (selected) => {
         selectedImages = selected;
         updateDownloadButton();
+      },
+      onDimensionsResolved: (src, width, height) => {
+        handleDimensionsResolved(src, width, height);
       }
     });
+    function syncSizeFilterControls() {
+      for (const [key, input] of Object.entries(sizeInputs)) {
+        input.value = sizeFilter[key] ?? "";
+      }
+      includeUnknownToggle.checked = sizeFilter.includeUnknown;
+    }
+    function readSizeFilterControls() {
+      return {
+        minWidth: minWidthInput.value,
+        maxWidth: maxWidthInput.value,
+        minHeight: minHeightInput.value,
+        maxHeight: maxHeightInput.value,
+        includeUnknown: includeUnknownToggle.checked
+      };
+    }
+    function showSizeFilterErrors(errors = {}) {
+      for (const [key, input] of Object.entries(sizeInputs)) {
+        input.classList.toggle("is-invalid", Boolean(errors[key]));
+        input.setAttribute("aria-invalid", errors[key] ? "true" : "false");
+      }
+      const message = Object.values(errors)[0] || "";
+      sizeFilterError.textContent = message;
+      sizeFilterError.classList.toggle("is-visible", Boolean(message));
+    }
+    async function saveSizeFilter() {
+      try {
+        await setItem(SIZE_FILTER_KEY, sizeFilter);
+      } catch (error) {
+        logger.warn("保存尺寸筛选设置失败", error);
+      }
+    }
+    function updateSizeFilterSummary(visibleCount = null) {
+      if (!sizeFilterSummary) return;
+      const displayed = visibleCount ?? filterImagesBySize(currentImages, sizeFilter).length;
+      const unknown = currentImages.filter((image) => !isKnownImageSize(image)).length;
+      sizeFilterSummary.textContent = `展示 ${displayed}/${currentImages.length} · 尺寸未知 ${unknown}`;
+    }
+    function requestUnknownDimensionResolution() {
+      dimensionResolver.enqueue(currentImages);
+    }
+    function renderFilteredImages({ preserveSelection = true } = {}) {
+      const visibleImages = filterImagesBySize(currentImages, sizeFilter);
+      imageSelector.render(visibleImages, { preserveSelection });
+      updateSizeFilterSummary(visibleImages.length);
+      requestUnknownDimensionResolution();
+    }
+    function scheduleFilteredRender() {
+      if (filterRenderTimer !== null) return;
+      filterRenderTimer = window.setTimeout(() => {
+        filterRenderTimer = null;
+        renderFilteredImages({ preserveSelection: true });
+      }, 100);
+    }
+    function handleDimensionsResolved(src, width, height) {
+      const updated = imageCollection.updateDimensions(src, width, height);
+      imageSelector == null ? void 0 : imageSelector.updateDimensions(src, width, height);
+      if (!updated) return;
+      if (isSizeFilterActive(sizeFilter)) {
+        scheduleFilteredRender();
+      } else {
+        updateSizeFilterSummary();
+      }
+    }
+    function applySizeFilterFromControls() {
+      const validation = validateSizeFilter(readSizeFilterControls());
+      if (!validation.valid) {
+        showSizeFilterErrors(validation.errors);
+        return false;
+      }
+      showSizeFilterErrors();
+      sizeFilter = validation.settings;
+      renderFilteredImages({ preserveSelection: true });
+      saveSizeFilter();
+      return true;
+    }
+    function resetSizeFilter() {
+      if (filterInputTimer !== null) {
+        window.clearTimeout(filterInputTimer);
+        filterInputTimer = null;
+      }
+      sizeFilter = { ...DEFAULT_SIZE_FILTER };
+      syncSizeFilterControls();
+      showSizeFilterErrors();
+      renderFilteredImages({ preserveSelection: true });
+      saveSizeFilter();
+    }
     function scanAndUpdate({ replace = false, source = "manual" } = {}) {
       const scannedImages = imageCapture.getAllImages();
       const result = replace ? imageCollection.replace(scannedImages) : imageCollection.merge(scannedImages);
       if (result.changed || replace) {
         currentImages = imageCollection.getSortedImages();
-        imageSelector.render(currentImages, { preserveSelection: !replace });
+        renderFilteredImages({ preserveSelection: !replace });
+      } else {
+        updateSizeFilterSummary();
+        requestUnknownDimensionResolution();
       }
       logger.info("图片捕获完成", {
         source,
@@ -3100,6 +3681,23 @@ function normalizeGifQualityMode(mode) {
     captureBtn.addEventListener("click", () => {
       runManualCapture("button");
     });
+    Object.values(sizeInputs).forEach((input) => {
+      input.addEventListener("input", () => {
+        if (filterInputTimer !== null) window.clearTimeout(filterInputTimer);
+        filterInputTimer = window.setTimeout(() => {
+          filterInputTimer = null;
+          applySizeFilterFromControls();
+        }, 200);
+      });
+    });
+    includeUnknownToggle.addEventListener("change", () => {
+      if (filterInputTimer !== null) {
+        window.clearTimeout(filterInputTimer);
+        filterInputTimer = null;
+      }
+      applySizeFilterFromControls();
+    });
+    resetSizeFilterBtn.addEventListener("click", resetSizeFilter);
     autoCaptureToggle.addEventListener("change", () => {
       if (autoCaptureToggle.checked) {
         autoCaptureLabel.classList.add("is-active");
@@ -3120,9 +3718,10 @@ function normalizeGifQualityMode(mode) {
       imageSelector.selectNone();
     });
     clearCapturedBtn.addEventListener("click", () => {
+      dimensionResolver.reset();
       imageCollection.clear();
       currentImages = [];
-      imageSelector.render(currentImages);
+      renderFilteredImages({ preserveSelection: false });
       statusText.textContent = autoCaptureController.active ? "已清空捕获，自动捕获将继续累计" : "已清空捕获图片";
       logger.info("已清空当前捕获图片");
     });
@@ -3130,8 +3729,17 @@ function normalizeGifQualityMode(mode) {
       const confirmed = window.confirm("确认清除当前脚本的存储记录吗？");
       if (!confirmed) return;
       downloadHistory.length = 0;
+      if (filterInputTimer !== null) {
+        window.clearTimeout(filterInputTimer);
+        filterInputTimer = null;
+      }
       try {
         await setItem(DOWNLOADED_HISTORY_KEY, []);
+        sizeFilter = { ...DEFAULT_SIZE_FILTER };
+        await setItem(SIZE_FILTER_KEY, sizeFilter);
+        syncSizeFilterControls();
+        showSizeFilterErrors();
+        renderFilteredImages({ preserveSelection: true });
         updateDownloadedCount(downloadedCountText);
         statusText.textContent = "存储已清除";
         logger.info("图片脚本存储已清除");
@@ -3198,6 +3806,7 @@ function normalizeGifQualityMode(mode) {
       return `${month}${day}${hours}${minutes}`;
     }
     updateDownloadButton();
+    updateSizeFilterSummary();
     logger.info("imageDownloader 初始化完成", {
       downloadedCount: downloadHistory.length
     });

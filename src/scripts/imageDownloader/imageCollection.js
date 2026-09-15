@@ -1,3 +1,5 @@
+import { getImageDedupKey } from './imageUrl.js';
+
 const naturalCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'variant',
@@ -52,7 +54,7 @@ function copyImageRecord(image) {
 }
 
 /**
- * 当前页面会话内的图片集合。使用最终 URL 去重，不持久化 DOM 节点。
+ * 当前页面会话内的图片集合。使用规范化资源标识去重，不持久化 DOM 节点。
  */
 export class ImageCollection {
   constructor() {
@@ -79,10 +81,11 @@ export class ImageCollection {
     for (const image of Array.isArray(images) ? images : []) {
       const src = typeof image?.src === 'string' ? image.src : '';
       if (!src) continue;
+      const dedupKey = getImageDedupKey(src);
 
-      const existing = this.records.get(src);
+      const existing = this.records.get(dedupKey);
       if (!existing) {
-        this.records.set(src, copyImageRecord(image));
+        this.records.set(dedupKey, copyImageRecord(image));
         added += 1;
         changed = true;
         continue;
@@ -110,6 +113,28 @@ export class ImageCollection {
 
   getSortedImages() {
     return sortImagesByDomPath(Array.from(this.records.values()));
+  }
+
+  updateDimensions(src, width, height) {
+    const record = this.records.get(getImageDedupKey(src));
+    const nextWidth = Number(width);
+    const nextHeight = Number(height);
+
+    if (
+      !record ||
+      !Number.isFinite(nextWidth) || nextWidth <= 0 ||
+      !Number.isFinite(nextHeight) || nextHeight <= 0
+    ) {
+      return false;
+    }
+
+    if (record.width === nextWidth && record.height === nextHeight) {
+      return false;
+    }
+
+    record.width = nextWidth;
+    record.height = nextHeight;
+    return true;
   }
 
   get size() {

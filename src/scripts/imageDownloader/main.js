@@ -18,7 +18,7 @@ function isTopWindow() {
 
 export const USERSCRIPT_HEADER = `// @name         Image Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.2
 // @description  图片批量下载器 - 捕获页面图片并支持批量下载
 // @match        https://*/*
 // @match        http://*/*
@@ -44,12 +44,23 @@ import { createPanel } from '@/scripts/imageDownloader/panel.js';
 import { getActiveEnhancerName, getEnhancerDisplayName } from '@/scripts/imageDownloader/imageEnhancers.js';
 import { ImageCollection } from '@/scripts/imageDownloader/imageCollection.js';
 import { AutoCaptureController } from '@/scripts/imageDownloader/autoCapture.js';
+import { ImageDimensionResolver } from '@/scripts/imageDownloader/imageDimensionResolver.js';
+import {
+  DEFAULT_SIZE_FILTER,
+  filterImagesBySize,
+  isKnownImageSize,
+  isSizeFilterActive,
+  normalizeStoredSizeFilter,
+  validateSizeFilter,
+} from '@/scripts/imageDownloader/imageSizeFilter.js';
 
 const SHORTCUT_KEY = 'i'; // 默认使用 Ctrl+Shift+I 触发
 const DOWNLOADED_HISTORY_KEY =
   config.imageDownloader?.storageKeys?.downloadHistory || 'imageDownloader_download_history';
 const GIF_QUALITY_MODE_KEY =
   config.imageDownloader?.storageKeys?.gifQualityMode || 'imageDownloader_gif_quality_mode';
+const SIZE_FILTER_KEY =
+  config.imageDownloader?.storageKeys?.sizeFilter || 'imageDownloader_size_filter';
 
 function normalizeGifQualityMode(mode) {
   return mode === 'low' ? 'low' : 'high';
@@ -74,6 +85,7 @@ function normalizeGifQualityMode(mode) {
   let selectedImages = [];
   const downloadHistory = [];
   let useHighQualityGif = true;
+  let sizeFilter = { ...DEFAULT_SIZE_FILTER };
   let shortcutEnabled = true;
   let isDownloading = false;
   const imageCapture = new ImageCapture();
@@ -192,10 +204,37 @@ function normalizeGifQualityMode(mode) {
   const autoCaptureLabel = panel.querySelector('#id-auto-capture-label');
   const prefixInput = panel.querySelector('#id-prefix');
   const gifQualityToggle = panel.querySelector('#id-gif-quality-toggle');
+  const minWidthInput = panel.querySelector('#id-min-width');
+  const maxWidthInput = panel.querySelector('#id-max-width');
+  const minHeightInput = panel.querySelector('#id-min-height');
+  const maxHeightInput = panel.querySelector('#id-max-height');
+  const includeUnknownToggle = panel.querySelector('#id-include-unknown');
+  const resetSizeFilterBtn = panel.querySelector('#id-reset-size-filter');
+  const sizeFilterSummary = panel.querySelector('#id-size-filter-summary');
+  const sizeFilterError = panel.querySelector('#id-size-filter-error');
   const statusText = panel.querySelector('.id-status');
   const downloadedCountText = panel.querySelector('#id-downloaded-count');
 
+  const sizeInputs = {
+    minWidth: minWidthInput,
+    maxWidth: maxWidthInput,
+    minHeight: minHeightInput,
+    maxHeight: maxHeightInput,
+  };
+  let filterInputTimer = null;
+  let filterRenderTimer = null;
+
   await loadDownloadHistory(downloadedCountText);
+
+  try {
+    const storedFilter = await getItem(SIZE_FILTER_KEY, DEFAULT_SIZE_FILTER);
+    sizeFilter = normalizeStoredSizeFilter(storedFilter);
+  } catch (error) {
+    logger.warn('读取尺寸筛选设置失败，使用默认设置', error);
+    sizeFilter = { ...DEFAULT_SIZE_FILTER };
+  }
+
+  syncSizeFilterControls();
 
   try {
     const storedMode = normalizeGifQualityMode(await getItem(GIF_QUALITY_MODE_KEY, 'high'));
@@ -222,14 +261,130 @@ function normalizeGifQualityMode(mode) {
     });
   }
 
+  let imageSelector = null;
+
+  const dimensionResolver = new ImageDimensionResolver({
+    concurrency: 4,
+    timeout: 15000,
+    onResolved: (src, width, height) => {
+      handleDimensionsResolved(src, width, height);
+    },
+  });
+
   // 初始化图片选择器
-  const imageSelector = new ImageSelector({
+  imageSelector = new ImageSelector({
     grid,
     onSelectionChange: (selected) => {
       selectedImages = selected;
       updateDownloadButton();
     },
+    onDimensionsResolved: (src, width, height) => {
+      handleDimensionsResolved(src, width, height);
+    },
   });
+
+  function syncSizeFilterControls() {
+    for (const [key, input] of Object.entries(sizeInputs)) {
+      input.value = sizeFilter[key] ?? '';
+    }
+    includeUnknownToggle.checked = sizeFilter.includeUnknown;
+  }
+
+  function readSizeFilterControls() {
+    return {
+      minWidth: minWidthInput.value,
+      maxWidth: maxWidthInput.value,
+      minHeight: minHeightInput.value,
+      maxHeight: maxHeightInput.value,
+      includeUnknown: includeUnknownToggle.checked,
+    };
+  }
+
+  function showSizeFilterErrors(errors = {}) {
+    for (const [key, input] of Object.entries(sizeInputs)) {
+      input.classList.toggle('is-invalid', Boolean(errors[key]));
+      input.setAttribute('aria-invalid', errors[key] ? 'true' : 'false');
+    }
+
+    const message = Object.values(errors)[0] || '';
+    sizeFilterError.textContent = message;
+    sizeFilterError.classList.toggle('is-visible', Boolean(message));
+  }
+
+  async function saveSizeFilter() {
+    try {
+      await setItem(SIZE_FILTER_KEY, sizeFilter);
+    } catch (error) {
+      logger.warn('保存尺寸筛选设置失败', error);
+    }
+  }
+
+  function updateSizeFilterSummary(visibleCount = null) {
+    if (!sizeFilterSummary) return;
+
+    const displayed = visibleCount ?? filterImagesBySize(currentImages, sizeFilter).length;
+    const unknown = currentImages.filter((image) => !isKnownImageSize(image)).length;
+    sizeFilterSummary.textContent = `展示 ${displayed}/${currentImages.length} · 尺寸未知 ${unknown}`;
+  }
+
+  function requestUnknownDimensionResolution() {
+    dimensionResolver.enqueue(currentImages);
+  }
+
+  function renderFilteredImages({ preserveSelection = true } = {}) {
+    const visibleImages = filterImagesBySize(currentImages, sizeFilter);
+    imageSelector.render(visibleImages, { preserveSelection });
+    updateSizeFilterSummary(visibleImages.length);
+    requestUnknownDimensionResolution();
+  }
+
+  function scheduleFilteredRender() {
+    if (filterRenderTimer !== null) return;
+
+    filterRenderTimer = window.setTimeout(() => {
+      filterRenderTimer = null;
+      renderFilteredImages({ preserveSelection: true });
+    }, 100);
+  }
+
+  function handleDimensionsResolved(src, width, height) {
+    const updated = imageCollection.updateDimensions(src, width, height);
+    imageSelector?.updateDimensions(src, width, height);
+
+    if (!updated) return;
+    if (isSizeFilterActive(sizeFilter)) {
+      scheduleFilteredRender();
+    } else {
+      updateSizeFilterSummary();
+    }
+  }
+
+  function applySizeFilterFromControls() {
+    const validation = validateSizeFilter(readSizeFilterControls());
+    if (!validation.valid) {
+      showSizeFilterErrors(validation.errors);
+      return false;
+    }
+
+    showSizeFilterErrors();
+    sizeFilter = validation.settings;
+    renderFilteredImages({ preserveSelection: true });
+    saveSizeFilter();
+    return true;
+  }
+
+  function resetSizeFilter() {
+    if (filterInputTimer !== null) {
+      window.clearTimeout(filterInputTimer);
+      filterInputTimer = null;
+    }
+
+    sizeFilter = { ...DEFAULT_SIZE_FILTER };
+    syncSizeFilterControls();
+    showSizeFilterErrors();
+    renderFilteredImages({ preserveSelection: true });
+    saveSizeFilter();
+  }
 
   function scanAndUpdate({ replace = false, source = 'manual' } = {}) {
     const scannedImages = imageCapture.getAllImages();
@@ -239,7 +394,10 @@ function normalizeGifQualityMode(mode) {
 
     if (result.changed || replace) {
       currentImages = imageCollection.getSortedImages();
-      imageSelector.render(currentImages, { preserveSelection: !replace });
+      renderFilteredImages({ preserveSelection: !replace });
+    } else {
+      updateSizeFilterSummary();
+      requestUnknownDimensionResolution();
     }
 
     logger.info('图片捕获完成', {
@@ -288,6 +446,26 @@ function normalizeGifQualityMode(mode) {
     runManualCapture('button');
   });
 
+  Object.values(sizeInputs).forEach((input) => {
+    input.addEventListener('input', () => {
+      if (filterInputTimer !== null) window.clearTimeout(filterInputTimer);
+      filterInputTimer = window.setTimeout(() => {
+        filterInputTimer = null;
+        applySizeFilterFromControls();
+      }, 200);
+    });
+  });
+
+  includeUnknownToggle.addEventListener('change', () => {
+    if (filterInputTimer !== null) {
+      window.clearTimeout(filterInputTimer);
+      filterInputTimer = null;
+    }
+    applySizeFilterFromControls();
+  });
+
+  resetSizeFilterBtn.addEventListener('click', resetSizeFilter);
+
   autoCaptureToggle.addEventListener('change', () => {
     if (autoCaptureToggle.checked) {
       autoCaptureLabel.classList.add('is-active');
@@ -314,9 +492,10 @@ function normalizeGifQualityMode(mode) {
   });
 
   clearCapturedBtn.addEventListener('click', () => {
+    dimensionResolver.reset();
     imageCollection.clear();
     currentImages = [];
-    imageSelector.render(currentImages);
+    renderFilteredImages({ preserveSelection: false });
     statusText.textContent = autoCaptureController.active
       ? '已清空捕获，自动捕获将继续累计'
       : '已清空捕获图片';
@@ -329,8 +508,18 @@ function normalizeGifQualityMode(mode) {
 
     downloadHistory.length = 0;
 
+    if (filterInputTimer !== null) {
+      window.clearTimeout(filterInputTimer);
+      filterInputTimer = null;
+    }
+
     try {
       await setItem(DOWNLOADED_HISTORY_KEY, []);
+      sizeFilter = { ...DEFAULT_SIZE_FILTER };
+      await setItem(SIZE_FILTER_KEY, sizeFilter);
+      syncSizeFilterControls();
+      showSizeFilterErrors();
+      renderFilteredImages({ preserveSelection: true });
       updateDownloadedCount(downloadedCountText);
       statusText.textContent = '存储已清除';
       logger.info('图片脚本存储已清除');
@@ -411,6 +600,7 @@ function normalizeGifQualityMode(mode) {
   }
 
   updateDownloadButton();
+  updateSizeFilterSummary();
   logger.info('imageDownloader 初始化完成', {
     downloadedCount: downloadHistory.length,
   });

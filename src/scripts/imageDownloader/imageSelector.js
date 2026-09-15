@@ -27,6 +27,8 @@ export class ImageSelector extends ResourceSelector {
    * @param {Function} options.onSelectionChange - 选择变化回调
    */
   constructor(options) {
+    const onDimensionsResolved = options.onDimensionsResolved || (() => {});
+
     super({
       ...options,
       emptyText: '未找到图片',
@@ -40,23 +42,34 @@ export class ImageSelector extends ResourceSelector {
       },
       createThumbnail: (img, index, helpers) => {
         const thumb = helpers.createElement('div', { className: 'id-image-thumb' });
+        let usingFallback = false;
 
         const imgEl = helpers.createElement('img', {
           src: img.src,
           alt: img.alt || `图片 ${index + 1}`,
           loading: 'lazy',
           onerror: () => {
+            if (usingFallback) return;
+            usingFallback = true;
             imgEl.src =
               'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f0f0f0" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="%23999" font-size="12">加载失败</text></svg>';
           },
         });
 
         imgEl.onload = () => {
-          if (imgEl.naturalWidth > 0) {
+          if (!usingFallback && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+            const width = imgEl.naturalWidth;
+            const height = imgEl.naturalHeight;
+            const changed = img.width !== width || img.height !== height;
+
+            if (changed) onDimensionsResolved(img.src, width, height);
             helpers.updateResource({
-              width: imgEl.naturalWidth,
-              height: imgEl.naturalHeight,
+              width,
+              height,
             });
+
+            const sizeEl = thumb.closest('.id-image-item')?.querySelector('.id-size');
+            if (sizeEl) sizeEl.textContent = `${width}×${height}`;
           }
         };
 
@@ -125,5 +138,20 @@ export class ImageSelector extends ResourceSelector {
    */
   getSelectedImages() {
     return this.getSelectedResources();
+  }
+
+  updateDimensions(src, width, height) {
+    const index = this.resources.findIndex((image) => image?.src === src);
+    if (index < 0) return false;
+
+    const image = this.resources[index];
+    image.width = width;
+    image.height = height;
+
+    const sizeEl = this.grid
+      .querySelector(`[data-index="${index}"]`)
+      ?.querySelector('.id-size');
+    if (sizeEl) sizeEl.textContent = `${width}×${height}`;
+    return true;
   }
 }

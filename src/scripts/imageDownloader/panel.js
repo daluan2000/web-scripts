@@ -51,6 +51,40 @@ export function createPanel() {
         <input type="text" id="id-prefix" class="id-input" placeholder="如: photo" />
       </label>
     </div>
+    <div class="id-size-filter" aria-label="图片尺寸筛选">
+      <div class="id-size-filter-header">
+        <span class="id-size-filter-title">尺寸筛选</span>
+        <span class="id-size-filter-summary" id="id-size-filter-summary">展示 0/0 · 尺寸未知 0</span>
+      </div>
+      <div class="id-size-filter-controls">
+        <div class="id-size-filter-group">
+          <span class="id-size-filter-group-label">宽度</span>
+          <div class="id-size-range-control">
+            <input type="number" id="id-min-width" class="id-size-input" min="1" step="1" placeholder="最小" aria-label="最小宽度" />
+            <span class="id-size-range-separator">至</span>
+            <input type="number" id="id-max-width" class="id-size-input" min="1" step="1" placeholder="最大" aria-label="最大宽度" />
+            <span class="id-size-unit">px</span>
+          </div>
+        </div>
+        <div class="id-size-filter-group">
+          <span class="id-size-filter-group-label">高度</span>
+          <div class="id-size-range-control">
+            <input type="number" id="id-min-height" class="id-size-input" min="1" step="1" placeholder="最小" aria-label="最小高度" />
+            <span class="id-size-range-separator">至</span>
+            <input type="number" id="id-max-height" class="id-size-input" min="1" step="1" placeholder="最大" aria-label="最大高度" />
+            <span class="id-size-unit">px</span>
+          </div>
+        </div>
+        <div class="id-size-filter-actions">
+          <label class="id-switch-label id-include-unknown-label" title="尺寸未知的图片不受宽高条件限制">
+            <input type="checkbox" id="id-include-unknown" checked />
+            包含未知尺寸
+          </label>
+          <button type="button" class="id-btn id-size-filter-reset" id="id-reset-size-filter">重置</button>
+        </div>
+      </div>
+      <span class="id-size-filter-error" id="id-size-filter-error" role="alert"></span>
+    </div>
     <div class="id-image-grid"></div>
     <div class="id-panel-footer">
       <span class="id-status">点击「捕获图片」开始</span>

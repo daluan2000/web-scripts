@@ -3,6 +3,7 @@
  * 获取当前页面中的所有图片
  */
 import { enhanceImageUrl } from './imageEnhancers.js';
+import { normalizeCapturedImageUrl } from './imageUrl.js';
 
 const DOWNLOADER_UI_SELECTOR = '#id-panel, #id-floating-btn';
 
@@ -85,7 +86,8 @@ export class ImageCapture {
     if (this.isDownloaderUiElement(img)) return;
 
     // 优先使用真实 URL（非空、非占位符）
-    const src = this.getImageSrc(img.src) || this.getImageSrc(img.dataset?.src) || 
+    const src = this.getImageSrc(img.currentSrc) || this.getImageSrc(img.src) ||
+                this.getImageSrc(img.dataset?.src) ||
                 this.getImageSrc(img.dataset?.original) || this.getImageSrc(img.dataset?.lazy) ||
                 this.getImageSrc(img.getAttribute('data-src')) || this.getImageSrc(img.getAttribute('data-original'));
 
@@ -163,6 +165,10 @@ export class ImageCapture {
     // 清理 URL，保留查询参数（对于字节等平台很重要）
     let cleanUrl = url.split('#')[0].trim();
 
+    // 统一协议相对地址和页面相对地址，避免同一资源产生多个 URL 形式。
+    cleanUrl = normalizeCapturedImageUrl(cleanUrl, window.location.href);
+    if (!cleanUrl) return null;
+
     // 应用网站特定的增强规则
     cleanUrl = enhanceImageUrl(cleanUrl);
 
@@ -235,13 +241,15 @@ export class ImageCapture {
    */
   createImageInfo(src, type, element) {
     const domMetadata = this.getDomMetadata(element);
+    const naturalWidth = Number(element?.naturalWidth);
+    const naturalHeight = Number(element?.naturalHeight);
 
     return {
       src,
       type,
       alt: element?.alt || '',
-      width: element?.naturalWidth || element?.width || 0,
-      height: element?.naturalHeight || element?.height || 0,
+      width: Number.isFinite(naturalWidth) && naturalWidth > 0 ? naturalWidth : 0,
+      height: Number.isFinite(naturalHeight) && naturalHeight > 0 ? naturalHeight : 0,
       fileSize: null,
       element: element,
       ...domMetadata,
