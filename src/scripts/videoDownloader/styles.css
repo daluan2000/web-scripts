@@ -565,12 +565,36 @@
   border-radius: 6px;
   padding: 4px 6px;
   font-size: 12px;
-  color: #1e293b;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+  background: #ffffff !important;
+  color-scheme: light;
+  outline: none;
 }
 
 .vd-filename-input:focus {
   border-color: #0ea5a4;
   box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.16);
+}
+
+.vd-filename-input.has-conflict,
+.vd-filename-input.has-conflict:focus {
+  border-color: #dc2626 !important;
+  background: #fff7f7 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.14);
+}
+
+.vd-filename-validation {
+  display: none;
+  font-size: 10px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.vd-filename-validation.has-conflict {
+  display: block;
+  color: #b91c1c;
 }
 
 .vd-meta {
@@ -590,6 +614,16 @@
 .vd-badge-hls {
   background: #cffafe;
   color: #115e59;
+}
+
+.vd-badge-dash {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.vd-badge-page {
+  background: #ede9fe;
+  color: #5b21b6;
 }
 
 .vd-badge-unsupported {

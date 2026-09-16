@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import re
 import shutil
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,72 +138,97 @@ class DownloadTaskManager:
         video = payload.videos[0]
         fallback = _fallback_name_from_url(video.src)
         requested_name = (video.fileName or "").strip() or fallback
-        task_id = _sanitize_file_stem(requested_name)
+        requested_stem = _sanitize_file_stem(requested_name)
 
-        if not task_id:
-            raise ValueError("无法生成任务ID，请填写有效文件名")
+        if not requested_stem:
+            raise ValueError("无法生成输出文件名，请填写有效文件名")
 
         output_dir = self._settings.get_download_root_path()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if self._has_existing_output_file(output_dir, task_id):
-            raise ValueError(f"文件名已存在: {task_id}")
-
         async with self._tasks_lock:
-            existing_task = self._tasks.get(task_id)
-            if existing_task and existing_task.status not in TERMINAL_STATUSES:
-                raise ValueError(f"同名任务正在执行: {task_id}")
-            if existing_task and existing_task.status in TERMINAL_STATUSES:
-                self._tasks.pop(task_id, None)
+            if not self._is_output_stem_available(output_dir, requested_stem):
+                raise ValueError(f"文件名已存在或同名任务正在下载: {requested_stem}")
 
-        part_dir = self._prepare_task_part_dir(output_dir=output_dir, task_id=task_id)
+            output_stem = requested_stem
+            task_id = self._create_task_id()
+            while task_id in self._tasks:
+                task_id = self._create_task_id()
 
-        now = _utcnow()
-        items = [
-            TaskItemState(
-                index=index,
-                src=item.src,
-                type=item.type,
-                title=item.title,
+            download_videos = [
+                item.model_copy(update={"fileName": output_stem})
+                for item in payload.videos
+            ]
+            part_dir = self._prepare_task_part_dir(output_dir=output_dir, task_id=task_id)
+            now = _utcnow()
+            items = [
+                TaskItemState(
+                    index=index,
+                    src=item.src,
+                    type=item.type,
+                    title=item.title,
+                )
+                for index, item in enumerate(download_videos)
+            ]
+
+            task = TaskState(
+                id=task_id,
+                task_name=output_stem,
+                status=TaskStatus.queued,
+                created_at=now,
+                updated_at=now,
+                total=len(download_videos),
+                completed=0,
+                success=0,
+                failed=0,
+                progress=0.0,
+                progress_text="",
+                speed="",
+                eta="",
+                message="任务已创建，等待执行",
+                output_dir=str(output_dir),
+                part_dir=str(part_dir),
+                cache_dir=str(part_dir),
+                items=items,
             )
-            for index, item in enumerate(payload.videos)
-        ]
-
-        task = TaskState(
-            id=task_id,
-            task_name="",
-            status=TaskStatus.queued,
-            created_at=now,
-            updated_at=now,
-            total=len(payload.videos),
-            completed=0,
-            success=0,
-            failed=0,
-            progress=0.0,
-            progress_text="",
-            speed="",
-            eta="",
-            message="任务已创建，等待执行",
-            output_dir=str(output_dir),
-            part_dir=str(part_dir),
-            cache_dir=str(part_dir),
-            items=items,
-        )
-
-        async with self._tasks_lock:
             self._tasks[task.id] = task
 
-        task.runner = asyncio.create_task(self._run_task(task.id, payload.videos), name=f"task-{task.id}")
+        task.runner = asyncio.create_task(self._run_task(task.id, download_videos), name=f"task-{task.id}")
         await self._emit("task.created", task)
         return task
 
-    def _has_existing_output_file(self, output_dir: Path, file_stem: str) -> bool:
-        for path in output_dir.iterdir():
-            if path.is_file():
-                candidate_stem = path.stem
-                if candidate_stem == file_stem:
-                    return True
-        return False
+    def _create_task_id(self) -> str:
+        return f"task-{uuid.uuid4().hex}"
+
+    def _get_reserved_output_stems(self, output_dir: Path) -> set[str]:
+        reserved_stems = {
+            path.stem.casefold()
+            for path in output_dir.iterdir()
+            if path.is_file()
+        }
+        reserved_stems.update(
+            task.task_name.casefold()
+            for task in self._tasks.values()
+            if task.task_name and task.status not in TERMINAL_STATUSES
+        )
+        return reserved_stems
+
+    def _is_output_stem_available(self, output_dir: Path, requested_stem: str) -> bool:
+        return requested_stem.casefold() not in self._get_reserved_output_stems(output_dir)
+
+    async def check_output_name(self, requested_name: str) -> tuple[str, bool]:
+        requested = (requested_name or "").strip()
+        if not requested:
+            raise ValueError("文件名不能为空")
+
+        normalized_stem = _sanitize_file_stem(requested)
+        output_dir = self._settings.get_download_root_path()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        async with self._tasks_lock:
+            available = self._is_output_stem_available(output_dir, normalized_stem)
+
+        return normalized_stem, available
 
     def get_default_output_dir(self) -> str:
         return str(self._settings.get_download_root_path())

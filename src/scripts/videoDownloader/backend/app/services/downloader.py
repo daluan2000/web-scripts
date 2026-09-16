@@ -248,6 +248,11 @@ class YtDlpDownloader:
                 )
             )
         except yt_dlp.utils.DownloadError as error:
+            if str(video.type or "").strip().lower() == "dash" and self._is_ffmpeg_error(error):
+                raise yt_dlp.utils.DownloadError(
+                    "DASH 音视频合并需要 FFmpeg，请安装 FFmpeg 并确保 ffmpeg 命令可用"
+                ) from error
+
             if not self._is_timeout_error(error):
                 raise
 
@@ -413,6 +418,14 @@ class YtDlpDownloader:
     def _is_timeout_error(self, error: Exception) -> bool:
         message = str(error).lower()
         return "timed out" in message or "timeout" in message
+
+    def _is_ffmpeg_error(self, error: Exception) -> bool:
+        message = str(error).lower()
+        return "ffmpeg" in message and (
+            "not installed" in message
+            or "not found" in message
+            or "not available" in message
+        )
 
     def _is_direct_download_candidate(self, video: VideoItemInput) -> bool:
         media_type = str(video.type or "").strip().lower()

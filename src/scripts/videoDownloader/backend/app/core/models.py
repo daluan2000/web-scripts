@@ -76,6 +76,17 @@ class TaskCreateResponse(BaseModel):
     status: TaskStatus
 
 
+class OutputNameCheckRequest(BaseModel):
+    fileName: str = Field(..., min_length=1)
+
+
+class OutputNameCheckResponse(BaseModel):
+    available: bool
+    requestedName: str
+    normalizedName: str
+    message: str = ""
+
+
 class TaskCancelResponse(BaseModel):
     taskId: str
     status: TaskStatus

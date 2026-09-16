@@ -15,7 +15,8 @@ if (unknownScripts.length > 0) {
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const configFile = resolve(projectRoot, 'vite.config.js');
-const buildPrefix = String(process.env.BUILD_PREFIX || '').trim() || Date.now().toString(36);
+const buildPrefix = String(process.env.BUILD_PREFIX || '').trim()
+  || Date.now().toString(36).slice(-4).padStart(4, '0');
 
 process.chdir(projectRoot);
 process.env.BUILD_PREFIX = buildPrefix;

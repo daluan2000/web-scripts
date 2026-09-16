@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Downloader
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  视频批量下载器 - 前端采集关键信息，后端执行下载
 // @match        https://*/*
 // @match        http://*/*
@@ -13,6 +13,7 @@
 // @grant        GM_getValue
 // @grant        GM_listValues
 // @grant        unsafeWindow
+// @run-at       document-start
 // ==/UserScript==
 
 var _a, _b;
@@ -208,6 +209,15 @@ class VideoBackendClient {
     const response = await request(this.buildUrl("/api/video/tasks"), {
       method: "POST",
       body: payload,
+      timeout: this.timeout,
+      dataType: "json"
+    });
+    return response.data;
+  }
+  async checkFileName(fileName) {
+    const response = await request(this.buildUrl("/api/video/tasks/check-name"), {
+      method: "POST",
+      body: { fileName },
       timeout: this.timeout,
       dataType: "json"
     });
@@ -866,12 +876,36 @@ const styles = `/* 视频批量下载器样式 */
   border-radius: 6px;
   padding: 4px 6px;
   font-size: 12px;
-  color: #1e293b;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+  background: #ffffff !important;
+  color-scheme: light;
+  outline: none;
 }
 
 .vd-filename-input:focus {
   border-color: #0ea5a4;
   box-shadow: 0 0 0 2px rgba(14, 165, 164, 0.16);
+}
+
+.vd-filename-input.has-conflict,
+.vd-filename-input.has-conflict:focus {
+  border-color: #dc2626 !important;
+  background: #fff7f7 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.14);
+}
+
+.vd-filename-validation {
+  display: none;
+  font-size: 10px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.vd-filename-validation.has-conflict {
+  display: block;
+  color: #b91c1c;
 }
 
 .vd-meta {
@@ -891,6 +925,16 @@ const styles = `/* 视频批量下载器样式 */
 .vd-badge-hls {
   background: #cffafe;
   color: #115e59;
+}
+
+.vd-badge-dash {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.vd-badge-page {
+  background: #ede9fe;
+  color: #5b21b6;
 }
 
 .vd-badge-unsupported {
@@ -1379,7 +1423,7 @@ class VideoCapture {
       if (mediaType === "ts" && this.isLikelyHlsSegmentUrl(enhancedUrl)) {
         return;
       }
-      const supported = mediaType !== "blob" && mediaType !== "dash" && mediaType !== "dynamic";
+      const supported = mediaType !== "blob" && mediaType !== "dynamic";
       results.push({
         src: enhancedUrl,
         type: mediaType,
@@ -1501,9 +1545,6 @@ class VideoCapture {
   getUnsupportedReason(mediaType) {
     if (mediaType === "blob") {
       return "blob 资源无法直接提取源地址";
-    }
-    if (mediaType === "dash") {
-      return "dash/mpd 暂不支持";
     }
     if (mediaType === "dynamic") {
       return "动态脚本地址（如 .php）暂不支持自动下载";
@@ -1740,6 +1781,7 @@ function formatType(type) {
   if (type === "m3u8") return "HLS";
   if (type === "dash") return "DASH";
   if (type === "blob") return "BLOB";
+  if (type === "webpage") return "网页";
   return String(type).toUpperCase();
 }
 function isVideoSelectable(video) {
@@ -1751,6 +1793,9 @@ function getUnselectableReason(video) {
 }
 class VideoSelector extends ResourceSelector {
   constructor(options) {
+    const checkFileName = typeof (options == null ? void 0 : options.checkFileName) === "function" ? options.checkFileName : null;
+    const onFileNameValidationChange = typeof (options == null ? void 0 : options.onFileNameValidationChange) === "function" ? options.onFileNameValidationChange : () => {
+    };
     super({
       ...options,
       emptyText: "未找到视频资源",
@@ -1776,7 +1821,7 @@ class VideoSelector extends ResourceSelector {
             }
           });
           thumb.appendChild(imgEl);
-        } else if (video.type !== "m3u8" && video.type !== "dash" && video.type !== "blob") {
+        } else if (video.type !== "m3u8" && video.type !== "dash" && video.type !== "blob" && video.type !== "webpage") {
           const videoEl = helpers.createElement("video", {
             src: video.src,
             preload: "metadata",
@@ -1810,7 +1855,9 @@ class VideoSelector extends ResourceSelector {
         const info = helpers.createElement("div", { className: "vd-video-info" });
         const filename = getFileName(video.src);
         const editableName = getEditableFileName(video);
-        const meta = `${formatType(video.type)}  ·  ${formatDuration(video.duration)}`;
+        const childManifestCount = Math.max(0, Number(video.childManifestCount || 0) || 0);
+        const manifestSummary = childManifestCount > 0 ? `  ·  主清单（已合并 ${childManifestCount} 个子清单）` : "";
+        const meta = `${formatType(video.type)}  ·  ${formatDuration(video.duration)}${manifestSummary}`;
         const nameInput = helpers.createElement("input", {
           className: "vd-filename-input",
           type: "text",
@@ -1818,6 +1865,13 @@ class VideoSelector extends ResourceSelector {
           placeholder: "自定义文件名",
           title: "下载文件名（无需扩展名）"
         });
+        const nameValidation = helpers.createElement("span", {
+          className: "vd-filename-validation",
+          role: "status",
+          "aria-live": "polite"
+        });
+        let validationTimer = null;
+        let validationVersion = 0;
         if (!isVideoSelectable(video)) {
           nameInput.disabled = true;
           nameInput.title = getUnselectableReason(video);
@@ -1826,12 +1880,64 @@ class VideoSelector extends ResourceSelector {
           const value = String(nameInput.value || "").trim();
           helpers.updateResource({ fileName: value || editableName });
         };
+        const applyNameValidation = (result) => {
+          const hasConflict = (result == null ? void 0 : result.available) === false;
+          nameInput.classList.toggle("has-conflict", hasConflict);
+          nameInput.setAttribute("aria-invalid", hasConflict ? "true" : "false");
+          nameValidation.classList.toggle("has-conflict", hasConflict);
+          nameValidation.textContent = hasConflict ? String(
+            (result == null ? void 0 : result.message) || "文件名已存在或同名任务正在下载，请修改文件名"
+          ) : "";
+          helpers.updateResource({
+            fileNameConflict: hasConflict,
+            fileNameCheckPending: false
+          });
+          onFileNameValidationChange();
+        };
+        const scheduleNameValidation = (delayMs = 320) => {
+          if (!checkFileName || !isVideoSelectable(video)) return;
+          validationVersion += 1;
+          const requestVersion = validationVersion;
+          const value = String(nameInput.value || "").trim() || editableName;
+          if (validationTimer) clearTimeout(validationTimer);
+          nameInput.classList.remove("has-conflict");
+          nameInput.setAttribute("aria-invalid", "false");
+          nameValidation.classList.remove("has-conflict");
+          nameValidation.textContent = "";
+          helpers.updateResource({
+            fileNameConflict: false,
+            fileNameCheckPending: true
+          });
+          onFileNameValidationChange();
+          validationTimer = setTimeout(async () => {
+            try {
+              const result = await checkFileName(value);
+              if (requestVersion !== validationVersion) return;
+              applyNameValidation(result);
+            } catch {
+              if (requestVersion !== validationVersion) return;
+              nameInput.classList.remove("has-conflict");
+              nameInput.setAttribute("aria-invalid", "false");
+              nameValidation.classList.remove("has-conflict");
+              nameValidation.textContent = "";
+              helpers.updateResource({ fileNameCheckPending: false });
+              onFileNameValidationChange();
+            }
+          }, delayMs);
+        };
         nameInput.addEventListener("click", (event) => {
           event.stopPropagation();
         });
-        nameInput.addEventListener("input", commitFileName);
-        nameInput.addEventListener("change", commitFileName);
+        nameInput.addEventListener("input", () => {
+          commitFileName();
+          scheduleNameValidation();
+        });
+        nameInput.addEventListener("change", () => {
+          commitFileName();
+          scheduleNameValidation(0);
+        });
         info.appendChild(nameInput);
+        info.appendChild(nameValidation);
         info.appendChild(
           helpers.createElement("span", { className: "vd-filename", title: video.src }, truncate(filename, 26))
         );
@@ -1846,7 +1952,16 @@ class VideoSelector extends ResourceSelector {
           info.appendChild(
             helpers.createElement("span", { className: "vd-badge vd-badge-hls" }, "m3u8")
           );
+        } else if (video.type === "dash") {
+          info.appendChild(
+            helpers.createElement("span", { className: "vd-badge vd-badge-dash" }, "MPD")
+          );
+        } else if (video.type === "webpage") {
+          info.appendChild(
+            helpers.createElement("span", { className: "vd-badge vd-badge-page" }, "yt-dlp")
+          );
         }
+        scheduleNameValidation(0);
         return info;
       }
     });
@@ -1930,6 +2045,9 @@ function createPanel() {
       <button class="vd-btn vd-btn-primary" id="vd-capture" title="快捷键: Ctrl+Shift+V">
         <span>🎯</span> 捕获视频
       </button>
+      <button class="vd-btn vd-btn-ghost" id="vd-add-page" title="交给 yt-dlp 尝试解析当前播放页">
+        添加当前页
+      </button>
       <button class="vd-btn" id="vd-select-all">全选</button>
       <button class="vd-btn" id="vd-select-none">全不选</button>
       <button class="vd-btn vd-btn-success" id="vd-download" disabled>提交任务</button>
@@ -1979,7 +2097,491 @@ function initResizable(panel) {
     minHeight: 200
   });
 }
-addStyle(styles);
+const DIRECT_VIDEO_EXTENSIONS = /* @__PURE__ */ new Set([
+  "mp4",
+  "webm",
+  "m4v",
+  "mov",
+  "mkv",
+  "avi",
+  "flv"
+]);
+const DIRECT_MIME_TYPES = /* @__PURE__ */ new Map([
+  ["video/mp4", "mp4"],
+  ["video/webm", "webm"],
+  ["video/x-m4v", "m4v"],
+  ["video/quicktime", "mov"],
+  ["video/x-matroska", "mkv"],
+  ["video/x-msvideo", "avi"],
+  ["video/x-flv", "flv"]
+]);
+const HLS_MIME_TYPES = /* @__PURE__ */ new Set([
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+  "audio/mpegurl",
+  "audio/x-mpegurl"
+]);
+const DASH_MIME_TYPES = /* @__PURE__ */ new Set([
+  "application/dash+xml"
+]);
+const installedWindows = /* @__PURE__ */ new WeakMap();
+function normalizeMimeType(value) {
+  return String(value || "").split(";")[0].trim().toLowerCase();
+}
+function normalizeUrl(value, baseUrl) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.startsWith("data:")) return "";
+  if (raw.startsWith("blob:")) return raw;
+  try {
+    const parsed = new URL(raw, baseUrl || void 0);
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+function extractExtension(url) {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    const match = pathname.match(/\.([0-9a-z]+)$/i);
+    return (match == null ? void 0 : match[1]) || "";
+  } catch {
+    return "";
+  }
+}
+function hasUrlHint(url, hint) {
+  const pattern = new RegExp(`(?:^|[/?#&=_\\-])${hint}(?:[/?#&=_\\-]|$)`, "i");
+  return pattern.test(url);
+}
+function resolveManifestUrl(value, manifestUrl) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.startsWith("data:") || raw.startsWith("blob:")) return "";
+  try {
+    const parsed = new URL(raw, manifestUrl);
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+function extractUriAttribute(line) {
+  const match = String(line || "").match(/(?:^|,)URI=(?:"([^"]+)"|([^,\s]+))/i);
+  return (match == null ? void 0 : match[1]) || (match == null ? void 0 : match[2]) || "";
+}
+function extractHlsChildManifestUrls(manifestUrl, manifestText) {
+  const lines = String(manifestText || "").replace(/^\uFEFF/, "").split(/\r?\n/).map((line) => line.trim());
+  const childUrls = /* @__PURE__ */ new Set();
+  const addChild = (value) => {
+    const resolved = resolveManifestUrl(value, manifestUrl);
+    if (resolved && resolved !== manifestUrl) childUrls.add(resolved);
+  };
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+    if (/^#EXT-X-STREAM-INF:/i.test(line)) {
+      for (let childIndex = index + 1; childIndex < lines.length; childIndex += 1) {
+        const childLine = lines[childIndex];
+        if (!childLine) continue;
+        if (childLine.startsWith("#")) break;
+        addChild(childLine);
+        break;
+      }
+      continue;
+    }
+    if (/^#EXT-X-(?:I-FRAME-STREAM-INF|MEDIA):/i.test(line)) {
+      addChild(extractUriAttribute(line));
+    }
+  }
+  return Array.from(childUrls);
+}
+function classifyNetworkMedia(rawCandidate, options = {}) {
+  const input = typeof rawCandidate === "string" ? { src: rawCandidate } : rawCandidate || {};
+  const src = normalizeUrl(input.src, options.baseUrl);
+  if (!src) return null;
+  const mimeType = normalizeMimeType(input.mimeType);
+  const common = {
+    src,
+    mimeType,
+    captureSource: String(input.captureSource || "network"),
+    blobKind: String(input.blobKind || "")
+  };
+  if (src.startsWith("blob:")) {
+    const blobKind = common.blobKind || "unknown";
+    const reason = blobKind === "media-source" ? "MediaSource blob 需要捕获其背后的网络媒体地址" : "blob 资源无法提交到本机后端";
+    return {
+      ...common,
+      blobKind,
+      type: "blob",
+      supported: false,
+      unsupportedReason: reason,
+      isSegment: false
+    };
+  }
+  const extension = extractExtension(src);
+  let type = "";
+  if (HLS_MIME_TYPES.has(mimeType) || extension === "m3u8" || hasUrlHint(src, "m3u8")) {
+    type = "m3u8";
+  } else if (DASH_MIME_TYPES.has(mimeType) || extension === "mpd" || hasUrlHint(src, "mpd")) {
+    type = "dash";
+  } else if (extension === "m4s" || extension === "ts") {
+    type = extension;
+  } else if (DIRECT_VIDEO_EXTENSIONS.has(extension)) {
+    type = extension;
+  } else if (DIRECT_MIME_TYPES.has(mimeType)) {
+    type = DIRECT_MIME_TYPES.get(mimeType);
+  } else if (mimeType.startsWith("video/")) {
+    type = "video";
+  }
+  if (!type) return null;
+  const isSegment = type === "m4s" || type === "ts";
+  return {
+    ...common,
+    type,
+    supported: !isSegment,
+    unsupportedReason: isSegment ? "媒体分片需要对应的 m3u8 或 MPD 清单" : "",
+    isSegment
+  };
+}
+class NetworkMediaCollector {
+  constructor(options = {}) {
+    this.baseUrl = options.baseUrl || "";
+    this.maxCandidates = Math.max(1, Number(options.maxCandidates || 500));
+    this.candidates = /* @__PURE__ */ new Map();
+    this.segmentSummary = { ts: 0, m4s: 0, blob: 0 };
+    this.recentSegmentKeys = /* @__PURE__ */ new Set();
+    this.lastBlob = null;
+    this.hlsChildrenByMaster = /* @__PURE__ */ new Map();
+  }
+  add(rawCandidate) {
+    const candidate = classifyNetworkMedia(rawCandidate, { baseUrl: this.baseUrl });
+    if (!candidate) return null;
+    if (candidate.type === "m3u8" && rawCandidate && typeof rawCandidate === "object") {
+      const childUrls = extractHlsChildManifestUrls(candidate.src, rawCandidate.manifestText);
+      if (childUrls.length > 0) {
+        this.hlsChildrenByMaster.set(candidate.src, new Set(childUrls));
+      }
+    }
+    if (candidate.isSegment) {
+      const segmentKey = `${candidate.type}:${hashUrl(candidate.src)}`;
+      if (!this.recentSegmentKeys.has(segmentKey)) {
+        if (this.recentSegmentKeys.size >= 2e3) {
+          const oldestKey = this.recentSegmentKeys.values().next().value;
+          if (oldestKey) this.recentSegmentKeys.delete(oldestKey);
+        }
+        this.recentSegmentKeys.add(segmentKey);
+        this.segmentSummary[candidate.type] += 1;
+      }
+      return candidate;
+    }
+    if (candidate.type === "blob") {
+      this.segmentSummary.blob += 1;
+      this.lastBlob = candidate;
+      return candidate;
+    }
+    const existing = this.candidates.get(candidate.src);
+    if (existing) {
+      this.candidates.set(candidate.src, {
+        ...existing,
+        ...candidate,
+        mimeType: candidate.mimeType || existing.mimeType
+      });
+      return candidate;
+    }
+    if (this.candidates.size >= this.maxCandidates) {
+      const oldestKey = this.candidates.keys().next().value;
+      if (oldestKey) this.candidates.delete(oldestKey);
+    }
+    this.candidates.set(candidate.src, candidate);
+    return candidate;
+  }
+  getSnapshot() {
+    const childToMaster = /* @__PURE__ */ new Map();
+    this.hlsChildrenByMaster.forEach((children, masterUrl) => {
+      if (!this.candidates.has(masterUrl)) return;
+      children.forEach((childUrl) => {
+        if (this.candidates.has(childUrl) && !childToMaster.has(childUrl)) {
+          childToMaster.set(childUrl, masterUrl);
+        }
+      });
+    });
+    const videos = Array.from(this.candidates.values()).filter((candidate) => !childToMaster.has(candidate.src)).map((candidate) => {
+      const relatedManifestUrls = Array.from(this.hlsChildrenByMaster.get(candidate.src) || []).filter((childUrl) => this.candidates.has(childUrl));
+      if (relatedManifestUrls.length === 0) return candidate;
+      return {
+        ...candidate,
+        isMasterManifest: true,
+        childManifestCount: relatedManifestUrls.length,
+        relatedManifestUrls
+      };
+    });
+    if (this.lastBlob) {
+      videos.push({
+        ...this.lastBlob,
+        blobCount: this.segmentSummary.blob
+      });
+    }
+    return {
+      videos,
+      segmentSummary: { ...this.segmentSummary }
+    };
+  }
+}
+function hashUrl(value) {
+  let hash = 2166136261;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+function getFetchInputUrl(input) {
+  if (typeof input === "string") return input;
+  if (input && typeof input.url === "string") return input.url;
+  if (input && typeof input.href === "string") return input.href;
+  return "";
+}
+function getObjectKind(pageWindow, object) {
+  try {
+    if (pageWindow.MediaSource && object instanceof pageWindow.MediaSource) {
+      return "media-source";
+    }
+    if (pageWindow.Blob && object instanceof pageWindow.Blob) {
+      return "blob";
+    }
+  } catch {
+    return "unknown";
+  }
+  return "unknown";
+}
+function installNetworkMediaHooks({ pageWindow, onCandidate }) {
+  var _a2, _b2, _c, _d, _e, _f;
+  if (!pageWindow || typeof onCandidate !== "function") {
+    return { cleanup() {
+    } };
+  }
+  const existing = installedWindows.get(pageWindow);
+  if (existing) return existing;
+  const baseUrl = ((_a2 = pageWindow.location) == null ? void 0 : _a2.href) || "";
+  const safeEmit = (candidate) => {
+    try {
+      onCandidate(candidate);
+    } catch {
+    }
+  };
+  const restoreCallbacks = [];
+  const observers = [];
+  const originalFetch = pageWindow.fetch;
+  if (typeof originalFetch === "function") {
+    let wrappedFetch2 = function(...args) {
+      const requestUrl = getFetchInputUrl(args[0]);
+      safeEmit({ src: requestUrl, captureSource: "network-fetch-request" });
+      const result = originalFetch.apply(this, args);
+      Promise.resolve(result).then((response) => {
+        var _a3, _b3;
+        let mimeType = "";
+        try {
+          mimeType = ((_b3 = (_a3 = response == null ? void 0 : response.headers) == null ? void 0 : _a3.get) == null ? void 0 : _b3.call(_a3, "content-type")) || "";
+        } catch {
+        }
+        const responseUrl = (response == null ? void 0 : response.url) || requestUrl;
+        safeEmit({
+          src: responseUrl,
+          mimeType,
+          captureSource: "network-fetch-response"
+        });
+        const classified = classifyNetworkMedia({ src: responseUrl, mimeType }, { baseUrl });
+        if ((classified == null ? void 0 : classified.type) === "m3u8" && typeof (response == null ? void 0 : response.clone) === "function") {
+          try {
+            Promise.resolve(response.clone().text()).then((manifestText) => {
+              safeEmit({
+                src: responseUrl,
+                mimeType,
+                manifestText,
+                captureSource: "network-fetch-response-body"
+              });
+            }, () => {
+            });
+          } catch {
+          }
+        }
+      }, () => {
+      });
+      return result;
+    };
+    var wrappedFetch = wrappedFetch2;
+    try {
+      pageWindow.fetch = wrappedFetch2;
+      restoreCallbacks.push(() => {
+        if (pageWindow.fetch === wrappedFetch2) pageWindow.fetch = originalFetch;
+      });
+    } catch {
+    }
+  }
+  const xhrPrototype = (_b2 = pageWindow.XMLHttpRequest) == null ? void 0 : _b2.prototype;
+  const originalOpen = xhrPrototype == null ? void 0 : xhrPrototype.open;
+  if (xhrPrototype && typeof originalOpen === "function") {
+    let wrappedOpen2 = function(method, url, ...rest) {
+      var _a3;
+      requestUrls.set(this, url);
+      safeEmit({ src: url, captureSource: "network-xhr-request" });
+      (_a3 = this.addEventListener) == null ? void 0 : _a3.call(this, "loadend", () => {
+        var _a4;
+        let mimeType = "";
+        let manifestText = "";
+        try {
+          mimeType = ((_a4 = this.getResponseHeader) == null ? void 0 : _a4.call(this, "content-type")) || "";
+        } catch {
+        }
+        const responseUrl = this.responseURL || requestUrls.get(this) || "";
+        const classified = classifyNetworkMedia({ src: responseUrl, mimeType }, { baseUrl });
+        if ((classified == null ? void 0 : classified.type) === "m3u8") {
+          try {
+            if (!this.responseType || this.responseType === "text") {
+              manifestText = String(this.responseText || "");
+            }
+          } catch {
+          }
+        }
+        safeEmit({
+          src: responseUrl,
+          mimeType,
+          manifestText,
+          captureSource: "network-xhr-response"
+        });
+      }, { once: true });
+      return originalOpen.call(this, method, url, ...rest);
+    };
+    var wrappedOpen = wrappedOpen2;
+    const requestUrls = /* @__PURE__ */ new WeakMap();
+    try {
+      xhrPrototype.open = wrappedOpen2;
+      restoreCallbacks.push(() => {
+        if (xhrPrototype.open === wrappedOpen2) xhrPrototype.open = originalOpen;
+      });
+    } catch {
+    }
+  }
+  const originalCreateObjectURL = (_c = pageWindow.URL) == null ? void 0 : _c.createObjectURL;
+  if (pageWindow.URL && typeof originalCreateObjectURL === "function") {
+    let wrappedCreateObjectURL2 = function(object) {
+      const url = originalCreateObjectURL.call(this, object);
+      const blobKind = getObjectKind(pageWindow, object);
+      safeEmit({
+        src: url,
+        mimeType: (object == null ? void 0 : object.type) || "",
+        blobKind,
+        captureSource: "create-object-url"
+      });
+      return url;
+    };
+    var wrappedCreateObjectURL = wrappedCreateObjectURL2;
+    try {
+      pageWindow.URL.createObjectURL = wrappedCreateObjectURL2;
+      restoreCallbacks.push(() => {
+        if (pageWindow.URL.createObjectURL === wrappedCreateObjectURL2) {
+          pageWindow.URL.createObjectURL = originalCreateObjectURL;
+        }
+      });
+    } catch {
+    }
+  }
+  const inspectPerformanceEntry = (entry) => {
+    safeEmit({
+      src: (entry == null ? void 0 : entry.name) || "",
+      captureSource: `network-performance-${(entry == null ? void 0 : entry.initiatorType) || "resource"}`
+    });
+  };
+  try {
+    (_f = (_e = (_d = pageWindow.performance) == null ? void 0 : _d.getEntriesByType) == null ? void 0 : _e.call(_d, "resource")) == null ? void 0 : _f.forEach(inspectPerformanceEntry);
+  } catch {
+  }
+  if (typeof pageWindow.PerformanceObserver === "function") {
+    try {
+      const observer = new pageWindow.PerformanceObserver((list) => {
+        var _a3;
+        (_a3 = list == null ? void 0 : list.getEntries) == null ? void 0 : _a3.call(list).forEach(inspectPerformanceEntry);
+      });
+      try {
+        observer.observe({ type: "resource", buffered: true });
+      } catch {
+        observer.observe({ entryTypes: ["resource"] });
+      }
+      observers.push(observer);
+    } catch {
+    }
+  }
+  const api = {
+    cleanup() {
+      observers.forEach((observer) => {
+        try {
+          observer.disconnect();
+        } catch {
+        }
+      });
+      restoreCallbacks.reverse().forEach((restore) => {
+        try {
+          restore();
+        } catch {
+        }
+      });
+      installedWindows.delete(pageWindow);
+    }
+  };
+  installedWindows.set(pageWindow, api);
+  return api;
+}
+function createNetworkMediaCapture(options = {}) {
+  var _a2;
+  const pageWindow = options.pageWindow;
+  const collector = new NetworkMediaCollector({
+    baseUrl: ((_a2 = pageWindow == null ? void 0 : pageWindow.location) == null ? void 0 : _a2.href) || "",
+    maxCandidates: options.maxCandidates || 500
+  });
+  const hooks = installNetworkMediaHooks({
+    pageWindow,
+    onCandidate: (candidate) => collector.add(candidate)
+  });
+  return {
+    getSnapshot: () => collector.getSnapshot(),
+    cleanup: () => hooks.cleanup()
+  };
+}
+function toPositiveNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+function getFrameKey(video) {
+  return String((video == null ? void 0 : video.frameUrl) || "");
+}
+function hasUsefulPlaybackMetadata(video) {
+  return toPositiveNumber(video == null ? void 0 : video.duration) > 0 || toPositiveNumber(video == null ? void 0 : video.width) > 0 || toPositiveNumber(video == null ? void 0 : video.height) > 0 || Boolean(String((video == null ? void 0 : video.poster) || "").trim());
+}
+function enrichManifestMetadataFromBlobVideos(videos) {
+  const input = Array.isArray(videos) ? videos : [];
+  const blobSourcesByFrame = /* @__PURE__ */ new Map();
+  input.forEach((video) => {
+    if ((video == null ? void 0 : video.type) !== "blob" || !hasUsefulPlaybackMetadata(video)) return;
+    const frameKey = getFrameKey(video);
+    const sources = blobSourcesByFrame.get(frameKey) || [];
+    sources.push(video);
+    blobSourcesByFrame.set(frameKey, sources);
+  });
+  return input.map((video) => {
+    if ((video == null ? void 0 : video.type) !== "m3u8" && (video == null ? void 0 : video.type) !== "dash") return video;
+    const sources = blobSourcesByFrame.get(getFrameKey(video)) || [];
+    if (sources.length !== 1) return video;
+    const source = sources[0];
+    return {
+      ...video,
+      duration: toPositiveNumber(video.duration) || toPositiveNumber(source.duration),
+      width: toPositiveNumber(video.width) || toPositiveNumber(source.width),
+      height: toPositiveNumber(video.height) || toPositiveNumber(source.height),
+      poster: String(video.poster || "").trim() || String(source.poster || "").trim(),
+      title: String(video.title || "").trim() || String(source.title || "").trim()
+    };
+  });
+}
 const SHORTCUT_KEY = "v";
 const DOWNLOADED_HISTORY_KEY = (_b = (_a = config.videoDownloader) == null ? void 0 : _a.storageKeys) == null ? void 0 : _b.downloadHistory;
 const TERMINAL_STATUSES = /* @__PURE__ */ new Set(["success", "failed", "cancelled"]);
@@ -2003,6 +2605,8 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
   const historyRecordedTaskIds = /* @__PURE__ */ new Set();
   const taskPollers = /* @__PURE__ */ new Map();
   const handledCaptureRequestIds = /* @__PURE__ */ new Set();
+  const pageWindow = typeof unsafeWindow === "undefined" ? window : unsafeWindow;
+  const networkMediaCapture = createNetworkMediaCapture({ pageWindow });
   let shortcutEnabled = true;
   let wsHandle = null;
   let wsConnected = false;
@@ -2149,7 +2753,8 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
       rowTop.className = "vd-task-row";
       const taskIdText = document.createElement("span");
       taskIdText.className = "vd-task-id";
-      taskIdText.textContent = String(task.id || "-");
+      taskIdText.textContent = String(task.taskName || task.id || "-");
+      taskIdText.title = task.taskName && task.id ? `任务 ID: ${task.id}` : String(task.id || "");
       const statusTag = document.createElement("span");
       statusTag.className = `vd-task-status ${task.status || "queued"}`;
       statusTag.textContent = getTaskStatusLabel(task.status);
@@ -2341,6 +2946,53 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
     });
     return windows;
   }
+  function normalizeSegmentSummary(summary) {
+    return {
+      ts: Math.max(0, Number((summary == null ? void 0 : summary.ts) || 0) || 0),
+      m4s: Math.max(0, Number((summary == null ? void 0 : summary.m4s) || 0) || 0),
+      blob: Math.max(0, Number((summary == null ? void 0 : summary.blob) || 0) || 0)
+    };
+  }
+  function mergeSegmentSummary(target, source) {
+    const normalized = normalizeSegmentSummary(source);
+    target.ts += normalized.ts;
+    target.m4s += normalized.m4s;
+    target.blob += normalized.blob;
+    return target;
+  }
+  function collapseBlobVideos(videos) {
+    const realMediaFrames = /* @__PURE__ */ new Set();
+    videos.forEach((video) => {
+      if ((video == null ? void 0 : video.type) !== "blob" && (video == null ? void 0 : video.supported) !== false) {
+        realMediaFrames.add(String((video == null ? void 0 : video.frameUrl) || ""));
+      }
+    });
+    const firstBlobByFrame = /* @__PURE__ */ new Map();
+    const output = [];
+    videos.forEach((video) => {
+      if ((video == null ? void 0 : video.type) !== "blob") {
+        output.push(video);
+        return;
+      }
+      const frameKey = String((video == null ? void 0 : video.frameUrl) || "");
+      if (realMediaFrames.has(frameKey)) return;
+      const existing = firstBlobByFrame.get(frameKey);
+      if (existing) {
+        existing.blobCount = Number(existing.blobCount || 1) + Number((video == null ? void 0 : video.blobCount) || 1);
+        existing.unsupportedReason = `发现 ${existing.blobCount} 个 blob，但尚未捕获真实媒体地址`;
+        return;
+      }
+      const blobCount = Math.max(1, Number((video == null ? void 0 : video.blobCount) || 1) || 1);
+      const collapsed = {
+        ...video,
+        blobCount,
+        unsupportedReason: blobCount > 1 ? `发现 ${blobCount} 个 blob，但尚未捕获真实媒体地址` : video.unsupportedReason || "blob 资源无法直接提取源地址"
+      };
+      firstBlobByFrame.set(frameKey, collapsed);
+      output.push(collapsed);
+    });
+    return output;
+  }
   function broadcastCaptureRequestToChildFrames(requestId) {
     const payload = {
       channel: FRAME_CAPTURE_CHANNEL,
@@ -2355,14 +3007,22 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
       }
     });
   }
-  function captureCurrentFrameVideos() {
+  function captureCurrentFrameReport() {
     const capture = new VideoCapture();
-    const videos = capture.getAllVideos();
-    return videos.map((video) => ({
+    const networkSnapshot = networkMediaCapture.getSnapshot();
+    const capturedVideos = dedupeCapturedVideos([
+      ...capture.getAllVideos(),
+      ...networkSnapshot.videos
+    ]).map((video) => ({
       ...video,
       frameUrl: window.location.href,
       frameTitle: document.title || ""
     }));
+    const videos = enrichManifestMetadataFromBlobVideos(capturedVideos);
+    return {
+      videos: collapseBlobVideos(videos),
+      segmentSummary: normalizeSegmentSummary(networkSnapshot.segmentSummary)
+    };
   }
   function normalizeCapturedVideo(video, frameUrl = "", frameTitle = "") {
     if (!video || typeof video !== "object" || !video.src) {
@@ -2376,6 +3036,16 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
   }
   function pickBetterVideo(existing, candidate) {
     if (!existing) return candidate;
+    if ((candidate == null ? void 0 : candidate.type) === "blob" && (existing == null ? void 0 : existing.type) === "blob") {
+      return {
+        ...existing,
+        ...candidate,
+        blobCount: Math.max(
+          Number((existing == null ? void 0 : existing.blobCount) || 1),
+          Number((candidate == null ? void 0 : candidate.blobCount) || 1)
+        )
+      };
+    }
     if ((candidate == null ? void 0 : candidate.supported) && (existing == null ? void 0 : existing.supported) === false) {
       return candidate;
     }
@@ -2400,8 +3070,10 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
   }
   async function captureVideosFromAllFrames(timeoutMs = FRAME_CAPTURE_TIMEOUT_MS) {
     const requestId = `vd_capture_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    const localVideos = captureCurrentFrameVideos();
+    const localReport = captureCurrentFrameReport();
+    const localVideos = localReport.videos;
     const collected = [...localVideos];
+    const segmentSummary = normalizeSegmentSummary(localReport.segmentSummary);
     const onMessage = (event) => {
       const data = event == null ? void 0 : event.data;
       if (!isFrameCaptureMessage(data, FRAME_CAPTURE_RESPONSE)) return;
@@ -2413,6 +3085,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
           collected.push(normalized);
         }
       });
+      mergeSegmentSummary(segmentSummary, data.segmentSummary);
     };
     window.addEventListener("message", onMessage);
     try {
@@ -2423,13 +3096,25 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
     } finally {
       window.removeEventListener("message", onMessage);
     }
-    const merged = dedupeCapturedVideos(collected);
+    const merged = collapseBlobVideos(dedupeCapturedVideos(collected));
     logger.info("跨 frame 捕获完成", {
       localCount: localVideos.length,
       totalCount: merged.length,
-      remoteCount: Math.max(0, merged.length - localVideos.length)
+      remoteCount: Math.max(0, merged.length - localVideos.length),
+      segmentSummary
     });
-    return merged;
+    return { videos: merged, segmentSummary };
+  }
+  function formatCaptureResult(report) {
+    const videos = Array.isArray(report == null ? void 0 : report.videos) ? report.videos : [];
+    const summary = normalizeSegmentSummary(report == null ? void 0 : report.segmentSummary);
+    const segmentCount = summary.ts + summary.m4s;
+    const hasManifest = videos.some((video) => (video == null ? void 0 : video.type) === "m3u8" || (video == null ? void 0 : video.type) === "dash");
+    let message = `已捕获 ${videos.length} 个视频资源`;
+    if (segmentCount > 0 && !hasManifest) {
+      message += `；发现 ${segmentCount} 个分片请求，但尚未找到清单`;
+    }
+    return message;
   }
   function setupFrameCaptureBridge() {
     window.addEventListener("message", (event) => {
@@ -2441,8 +3126,11 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
       }
       handledCaptureRequestIds.add(requestId);
       let videos = [];
+      let segmentSummary = normalizeSegmentSummary();
       try {
-        videos = captureCurrentFrameVideos();
+        const report = captureCurrentFrameReport();
+        videos = report.videos;
+        segmentSummary = report.segmentSummary;
       } catch (error) {
         logger.warn("子 frame 捕获视频失败", error);
       }
@@ -2455,7 +3143,8 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
             requestId,
             frameUrl: window.location.href,
             frameTitle: document.title || "",
-            videos
+            videos,
+            segmentSummary
           },
           "*"
         );
@@ -2480,9 +3169,10 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
         }
         setStatusText(statusText, "正在跨 frame 捕获视频...");
         try {
-          currentVideos = await captureVideosFromAllFrames();
+          const report = await captureVideosFromAllFrames();
+          currentVideos = report.videos;
           videoSelector.render(currentVideos);
-          setStatusText(statusText, `已捕获 ${currentVideos.length} 个视频资源`);
+          setStatusText(statusText, formatCaptureResult(report));
         } catch (error) {
           logger.error("快捷键捕获视频失败", error);
           setStatusText(statusText, `捕获失败: ${(error == null ? void 0 : error.message) || "未知错误"}`);
@@ -2540,12 +3230,13 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
   async function init() {
     var _a3, _b3;
     logger.info("videoDownloader 初始化开始", { logLevel: config.logLevel });
+    addStyle(styles);
     const panel = createPanel();
     const activeEnhancer = getActiveEnhancerName();
     const note = panel.querySelector(".vd-panel-note");
     if (activeEnhancer && note) {
       const displayName = getEnhancerDisplayName(activeEnhancer);
-      note.textContent = `支持直链视频与 m3u8 基础下载，当前来源策略：${displayName}`;
+      note.textContent = `支持网络捕获、直链、HLS 与 DASH，当前来源策略：${displayName}`;
     }
     initFloatingButton({ onToggle: togglePanel });
     hidePanel();
@@ -2557,6 +3248,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
     const cleanupPartDirsBtn = panel.querySelector("#vd-cleanup-parts");
     const clearStorageBtn = panel.querySelector("#vd-clear-storage");
     const captureBtn = panel.querySelector("#vd-capture");
+    const addPageBtn = panel.querySelector("#vd-add-page");
     const reconnectBtn = panel.querySelector("#vd-reconnect");
     const backendStatusEl = panel.querySelector("#vd-backend-status");
     const statusText = panel.querySelector(".vd-status");
@@ -2568,6 +3260,8 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
     );
     const videoSelector = new VideoSelector({
       grid,
+      checkFileName: (fileName) => backendClient.checkFileName(fileName),
+      onFileNameValidationChange: () => updateDownloadButton(),
       onSelectionChange: (selected) => {
         selectedVideos = selected;
         updateDownloadButton();
@@ -2578,14 +3272,35 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1e3;
       logger.info("开始手动捕获视频");
       setStatusText(statusText, "正在跨 frame 捕获视频...");
       try {
-        currentVideos = await captureVideosFromAllFrames();
+        const report = await captureVideosFromAllFrames();
+        currentVideos = report.videos;
         videoSelector.render(currentVideos);
-        setStatusText(statusText, `已捕获 ${currentVideos.length} 个视频资源`);
+        setStatusText(statusText, formatCaptureResult(report));
         logger.info("手动捕获完成", { count: currentVideos.length });
       } catch (error) {
         logger.error("手动捕获失败", error);
         setStatusText(statusText, `捕获失败: ${(error == null ? void 0 : error.message) || "未知错误"}`);
       }
+    });
+    addPageBtn.addEventListener("click", () => {
+      const pageCandidate = {
+        src: window.location.href,
+        type: "webpage",
+        captureSource: "page-url",
+        mimeType: "text/html",
+        title: document.title || "",
+        fileName: document.title || "video",
+        duration: 0,
+        width: 0,
+        height: 0,
+        poster: "",
+        supported: true,
+        frameUrl: window.location.href,
+        frameTitle: document.title || ""
+      };
+      currentVideos = dedupeCapturedVideos([...currentVideos, pageCandidate]);
+      videoSelector.render(currentVideos);
+      setStatusText(statusText, "已添加当前页面，可由 yt-dlp 尝试解析");
     });
     selectAllBtn.addEventListener("click", () => {
       videoSelector.selectAll();
@@ -2730,8 +3445,16 @@ ${failedMessages.join("\n")}`);
     });
     function updateDownloadButton() {
       const count = selectedVideos.length;
-      downloadBtn.disabled = count === 0;
-      downloadBtn.textContent = count === 0 ? "提交任务" : `提交任务 (${count})`;
+      const hasConflict = selectedVideos.some((video) => video == null ? void 0 : video.fileNameConflict);
+      const isCheckingName = selectedVideos.some((video) => video == null ? void 0 : video.fileNameCheckPending);
+      downloadBtn.disabled = count === 0 || hasConflict || isCheckingName;
+      if (hasConflict) {
+        downloadBtn.textContent = "请修改重复文件名";
+      } else if (isCheckingName) {
+        downloadBtn.textContent = "正在检查文件名...";
+      } else {
+        downloadBtn.textContent = count === 0 ? "提交任务" : `提交任务 (${count})`;
+      }
     }
     await connectTaskStream(backendStatusEl, statusText, taskListEl, downloadedCountText);
     try {
