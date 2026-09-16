@@ -137,7 +137,7 @@ export class VideoCapture {
           return;
         }
 
-        const supported = mediaType !== 'blob' && mediaType !== 'dash' && mediaType !== 'dynamic';
+        const supported = mediaType !== 'blob' && mediaType !== 'dynamic';
 
         results.push({
           src: enhancedUrl,
@@ -293,10 +293,6 @@ export class VideoCapture {
   getUnsupportedReason(mediaType) {
     if (mediaType === 'blob') {
       return 'blob 资源无法直接提取源地址';
-    }
-
-    if (mediaType === 'dash') {
-      return 'dash/mpd 暂不支持';
     }
 
     if (mediaType === 'dynamic') {

@@ -45,6 +45,7 @@ function formatType(type) {
   if (type === 'm3u8') return 'HLS';
   if (type === 'dash') return 'DASH';
   if (type === 'blob') return 'BLOB';
+  if (type === 'webpage') return '网页';
   return String(type).toUpperCase();
 }
 
@@ -62,6 +63,13 @@ function getUnselectableReason(video) {
  */
 export class VideoSelector extends ResourceSelector {
   constructor(options) {
+    const checkFileName = typeof options?.checkFileName === 'function'
+      ? options.checkFileName
+      : null;
+    const onFileNameValidationChange = typeof options?.onFileNameValidationChange === 'function'
+      ? options.onFileNameValidationChange
+      : () => {};
+
     super({
       ...options,
       emptyText: '未找到视频资源',
@@ -88,7 +96,12 @@ export class VideoSelector extends ResourceSelector {
             },
           });
           thumb.appendChild(imgEl);
-        } else if (video.type !== 'm3u8' && video.type !== 'dash' && video.type !== 'blob') {
+        } else if (
+          video.type !== 'm3u8' &&
+          video.type !== 'dash' &&
+          video.type !== 'blob' &&
+          video.type !== 'webpage'
+        ) {
           const videoEl = helpers.createElement('video', {
             src: video.src,
             preload: 'metadata',
@@ -129,7 +142,11 @@ export class VideoSelector extends ResourceSelector {
         const filename = getFileName(video.src);
         const editableName = getEditableFileName(video);
 
-        const meta = `${formatType(video.type)}  ·  ${formatDuration(video.duration)}`;
+        const childManifestCount = Math.max(0, Number(video.childManifestCount || 0) || 0);
+        const manifestSummary = childManifestCount > 0
+          ? `  ·  主清单（已合并 ${childManifestCount} 个子清单）`
+          : '';
+        const meta = `${formatType(video.type)}  ·  ${formatDuration(video.duration)}${manifestSummary}`;
 
         const nameInput = helpers.createElement('input', {
           className: 'vd-filename-input',
@@ -138,6 +155,13 @@ export class VideoSelector extends ResourceSelector {
           placeholder: '自定义文件名',
           title: '下载文件名（无需扩展名）',
         });
+        const nameValidation = helpers.createElement('span', {
+          className: 'vd-filename-validation',
+          role: 'status',
+          'aria-live': 'polite',
+        });
+        let validationTimer = null;
+        let validationVersion = 0;
 
         if (!isVideoSelectable(video)) {
           nameInput.disabled = true;
@@ -149,13 +173,72 @@ export class VideoSelector extends ResourceSelector {
           helpers.updateResource({ fileName: value || editableName });
         };
 
+        const applyNameValidation = (result) => {
+          const hasConflict = result?.available === false;
+          nameInput.classList.toggle('has-conflict', hasConflict);
+          nameInput.setAttribute('aria-invalid', hasConflict ? 'true' : 'false');
+          nameValidation.classList.toggle('has-conflict', hasConflict);
+          nameValidation.textContent = hasConflict
+            ? String(
+              result?.message
+              || '文件名已存在或同名任务正在下载，请修改文件名'
+            )
+            : '';
+          helpers.updateResource({
+            fileNameConflict: hasConflict,
+            fileNameCheckPending: false,
+          });
+          onFileNameValidationChange();
+        };
+
+        const scheduleNameValidation = (delayMs = 320) => {
+          if (!checkFileName || !isVideoSelectable(video)) return;
+
+          validationVersion += 1;
+          const requestVersion = validationVersion;
+          const value = String(nameInput.value || '').trim() || editableName;
+
+          if (validationTimer) clearTimeout(validationTimer);
+          nameInput.classList.remove('has-conflict');
+          nameInput.setAttribute('aria-invalid', 'false');
+          nameValidation.classList.remove('has-conflict');
+          nameValidation.textContent = '';
+          helpers.updateResource({
+            fileNameConflict: false,
+            fileNameCheckPending: true,
+          });
+          onFileNameValidationChange();
+          validationTimer = setTimeout(async () => {
+            try {
+              const result = await checkFileName(value);
+              if (requestVersion !== validationVersion) return;
+              applyNameValidation(result);
+            } catch {
+              if (requestVersion !== validationVersion) return;
+              nameInput.classList.remove('has-conflict');
+              nameInput.setAttribute('aria-invalid', 'false');
+              nameValidation.classList.remove('has-conflict');
+              nameValidation.textContent = '';
+              helpers.updateResource({ fileNameCheckPending: false });
+              onFileNameValidationChange();
+            }
+          }, delayMs);
+        };
+
         nameInput.addEventListener('click', (event) => {
           event.stopPropagation();
         });
-        nameInput.addEventListener('input', commitFileName);
-        nameInput.addEventListener('change', commitFileName);
+        nameInput.addEventListener('input', () => {
+          commitFileName();
+          scheduleNameValidation();
+        });
+        nameInput.addEventListener('change', () => {
+          commitFileName();
+          scheduleNameValidation(0);
+        });
 
         info.appendChild(nameInput);
+        info.appendChild(nameValidation);
         info.appendChild(
           helpers.createElement('span', { className: 'vd-filename', title: video.src }, truncate(filename, 26))
         );
@@ -172,7 +255,18 @@ export class VideoSelector extends ResourceSelector {
           info.appendChild(
             helpers.createElement('span', { className: 'vd-badge vd-badge-hls' }, 'm3u8')
           );
+        } else if (video.type === 'dash') {
+          info.appendChild(
+            helpers.createElement('span', { className: 'vd-badge vd-badge-dash' }, 'MPD')
+          );
+        } else if (video.type === 'webpage') {
+          info.appendChild(
+            helpers.createElement('span', { className: 'vd-badge vd-badge-page' }, 'yt-dlp')
+          );
         }
+
+
+        scheduleNameValidation(0);
 
         return info;
       },

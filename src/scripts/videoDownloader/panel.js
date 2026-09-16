@@ -26,6 +26,9 @@ export function createPanel() {
       <button class="vd-btn vd-btn-primary" id="vd-capture" title="快捷键: Ctrl+Shift+V">
         <span>🎯</span> 捕获视频
       </button>
+      <button class="vd-btn vd-btn-ghost" id="vd-add-page" title="交给 yt-dlp 尝试解析当前播放页">
+        添加当前页
+      </button>
       <button class="vd-btn" id="vd-select-all">全选</button>
       <button class="vd-btn" id="vd-select-none">全不选</button>
       <button class="vd-btn vd-btn-success" id="vd-download" disabled>提交任务</button>

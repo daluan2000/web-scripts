@@ -29,5 +29,10 @@ npm-debug.log*
 # Python cache
 __pycache__/
 *.py[cod]
+src/scripts/videoDownloader/backend/.venv/
+src/scripts/videoDownloader/backend/.venv-wsl/
+src/scripts/videoDownloader/backend/build/
+src/scripts/videoDownloader/backend/dist/
+src/scripts/videoDownloader/backend/*.spec
 
 */**/tmp*/
