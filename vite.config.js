@@ -16,8 +16,8 @@ function getBuildPrefix() {
     return configuredPrefix;
   }
 
-  // 当前毫秒时间转成 Base36，通常只有 8 位，并且不会依赖共享状态文件。
-  return Date.now().toString(36);
+  // 使用当前毫秒时间的 Base36 末 4 位，保持自动前缀简短。
+  return Date.now().toString(36).slice(-4).padStart(4, '0');
 }
 
 const buildPrefix = getBuildPrefix();

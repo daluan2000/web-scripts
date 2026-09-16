@@ -59,6 +59,17 @@ export class VideoBackendClient {
     return response.data;
   }
 
+  async checkFileName(fileName) {
+    const response = await request(this.buildUrl('/api/video/tasks/check-name'), {
+      method: 'POST',
+      body: { fileName },
+      timeout: this.timeout,
+      dataType: 'json',
+    });
+
+    return response.data;
+  }
+
   async getTask(taskId) {
     const response = await request(this.buildUrl(`/api/video/tasks/${encodeURIComponent(taskId)}`), {
       method: 'GET',

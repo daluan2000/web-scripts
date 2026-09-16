@@ -28,6 +28,7 @@ import { VideoSelector } from '@/scripts/videoDownloader/videoSelector.js';
 import { createPanel } from '@/scripts/videoDownloader/panel.js';
 import { getActiveEnhancerName, getEnhancerDisplayName } from '@/scripts/videoDownloader/videoEnhancers.js';
 import { createNetworkMediaCapture } from '@/scripts/videoDownloader/networkMediaCapture.js';
+import { enrichManifestMetadataFromBlobVideos } from '@/scripts/videoDownloader/capturedVideoMetadata.js';
 
 const SHORTCUT_KEY = 'v';
 const DOWNLOADED_HISTORY_KEY =
@@ -236,7 +237,10 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
       const taskIdText = document.createElement('span');
       taskIdText.className = 'vd-task-id';
-      taskIdText.textContent = String(task.id || '-');
+      taskIdText.textContent = String(task.taskName || task.id || '-');
+      taskIdText.title = task.taskName && task.id
+        ? `任务 ID: ${task.id}`
+        : String(task.id || '');
 
       const statusTag = document.createElement('span');
       statusTag.className = `vd-task-status ${task.status || 'queued'}`;
@@ -547,7 +551,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
   function captureCurrentFrameReport() {
     const capture = new VideoCapture();
     const networkSnapshot = networkMediaCapture.getSnapshot();
-    const videos = dedupeCapturedVideos([
+    const capturedVideos = dedupeCapturedVideos([
       ...capture.getAllVideos(),
       ...networkSnapshot.videos,
     ]).map((video) => ({
@@ -555,6 +559,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
       frameUrl: window.location.href,
       frameTitle: document.title || '',
     }));
+    const videos = enrichManifestMetadataFromBlobVideos(capturedVideos);
 
     return {
       videos: collapseBlobVideos(videos),
@@ -852,6 +857,8 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
     const videoSelector = new VideoSelector({
       grid,
+      checkFileName: (fileName) => backendClient.checkFileName(fileName),
+      onFileNameValidationChange: () => updateDownloadButton(),
       onSelectionChange: (selected) => {
         selectedVideos = selected;
         updateDownloadButton();
@@ -1060,6 +1067,7 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
         } else {
           throw new Error(failedMessages.join('; '));
         }
+
       } catch (error) {
         logger.error('任务提交失败', error);
         setStatusText(statusText, `任务提交失败: ${error?.message || '未知错误'}`);
@@ -1068,8 +1076,17 @@ const FRAME_CAPTURE_REQUEST_TTL_MS = FRAME_CAPTURE_TIMEOUT_MS + 1000;
 
     function updateDownloadButton() {
       const count = selectedVideos.length;
-      downloadBtn.disabled = count === 0;
-      downloadBtn.textContent = count === 0 ? '提交任务' : `提交任务 (${count})`;
+      const hasConflict = selectedVideos.some((video) => video?.fileNameConflict);
+      const isCheckingName = selectedVideos.some((video) => video?.fileNameCheckPending);
+      downloadBtn.disabled = count === 0 || hasConflict || isCheckingName;
+
+      if (hasConflict) {
+        downloadBtn.textContent = '请修改重复文件名';
+      } else if (isCheckingName) {
+        downloadBtn.textContent = '正在检查文件名...';
+      } else {
+        downloadBtn.textContent = count === 0 ? '提交任务' : `提交任务 (${count})`;
+      }
     }
 
     await connectTaskStream(backendStatusEl, statusText, taskListEl, downloadedCountText);

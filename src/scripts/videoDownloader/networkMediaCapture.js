@@ -64,6 +64,63 @@ function hasUrlHint(url, hint) {
   return pattern.test(url);
 }
 
+function resolveManifestUrl(value, manifestUrl) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return '';
+
+  try {
+    const parsed = new URL(raw, manifestUrl);
+    parsed.hash = '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
+
+function extractUriAttribute(line) {
+  const match = String(line || '').match(/(?:^|,)URI=(?:"([^"]+)"|([^,\s]+))/i);
+  return match?.[1] || match?.[2] || '';
+}
+
+/**
+ * 从 HLS 主清单中提取变体、音轨、字幕和 I-frame 子清单地址。
+ * 普通媒体清单没有这些引用，因此返回空数组。
+ */
+export function extractHlsChildManifestUrls(manifestUrl, manifestText) {
+  const lines = String(manifestText || '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim());
+  const childUrls = new Set();
+
+  const addChild = (value) => {
+    const resolved = resolveManifestUrl(value, manifestUrl);
+    if (resolved && resolved !== manifestUrl) childUrls.add(resolved);
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+
+    if (/^#EXT-X-STREAM-INF:/i.test(line)) {
+      for (let childIndex = index + 1; childIndex < lines.length; childIndex += 1) {
+        const childLine = lines[childIndex];
+        if (!childLine) continue;
+        if (childLine.startsWith('#')) break;
+        addChild(childLine);
+        break;
+      }
+      continue;
+    }
+
+    if (/^#EXT-X-(?:I-FRAME-STREAM-INF|MEDIA):/i.test(line)) {
+      addChild(extractUriAttribute(line));
+    }
+  }
+
+  return Array.from(childUrls);
+}
+
 /**
  * 将网络请求归类为完整媒体、清单、分片或 blob。
  * 未表现出媒体特征的 URL 返回 null。
@@ -135,11 +192,19 @@ export class NetworkMediaCollector {
     this.segmentSummary = { ts: 0, m4s: 0, blob: 0 };
     this.recentSegmentKeys = new Set();
     this.lastBlob = null;
+    this.hlsChildrenByMaster = new Map();
   }
 
   add(rawCandidate) {
     const candidate = classifyNetworkMedia(rawCandidate, { baseUrl: this.baseUrl });
     if (!candidate) return null;
+
+    if (candidate.type === 'm3u8' && rawCandidate && typeof rawCandidate === 'object') {
+      const childUrls = extractHlsChildManifestUrls(candidate.src, rawCandidate.manifestText);
+      if (childUrls.length > 0) {
+        this.hlsChildrenByMaster.set(candidate.src, new Set(childUrls));
+      }
+    }
 
     if (candidate.isSegment) {
       const segmentKey = `${candidate.type}:${hashUrl(candidate.src)}`;
@@ -180,7 +245,30 @@ export class NetworkMediaCollector {
   }
 
   getSnapshot() {
-    const videos = Array.from(this.candidates.values());
+    const childToMaster = new Map();
+    this.hlsChildrenByMaster.forEach((children, masterUrl) => {
+      if (!this.candidates.has(masterUrl)) return;
+      children.forEach((childUrl) => {
+        if (this.candidates.has(childUrl) && !childToMaster.has(childUrl)) {
+          childToMaster.set(childUrl, masterUrl);
+        }
+      });
+    });
+
+    const videos = Array.from(this.candidates.values())
+      .filter((candidate) => !childToMaster.has(candidate.src))
+      .map((candidate) => {
+        const relatedManifestUrls = Array.from(this.hlsChildrenByMaster.get(candidate.src) || [])
+          .filter((childUrl) => this.candidates.has(childUrl));
+        if (relatedManifestUrls.length === 0) return candidate;
+
+        return {
+          ...candidate,
+          isMasterManifest: true,
+          childManifestCount: relatedManifestUrls.length,
+          relatedManifestUrls,
+        };
+      });
     if (this.lastBlob) {
       videos.push({
         ...this.lastBlob,
@@ -263,11 +351,28 @@ export function installNetworkMediaHooks({ pageWindow, onCandidate }) {
         } catch {
           // 跨域响应可能不允许读取响应头。
         }
+        const responseUrl = response?.url || requestUrl;
         safeEmit({
-          src: response?.url || requestUrl,
+          src: responseUrl,
           mimeType,
           captureSource: 'network-fetch-response',
         });
+
+        const classified = classifyNetworkMedia({ src: responseUrl, mimeType }, { baseUrl });
+        if (classified?.type === 'm3u8' && typeof response?.clone === 'function') {
+          try {
+            Promise.resolve(response.clone().text()).then((manifestText) => {
+              safeEmit({
+                src: responseUrl,
+                mimeType,
+                manifestText,
+                captureSource: 'network-fetch-response-body',
+              });
+            }, () => {});
+          } catch {
+            // 响应体可能已经被锁定，保留普通 URL 捕获结果即可。
+          }
+        }
       }, () => {});
 
       return result;
@@ -294,14 +399,27 @@ export function installNetworkMediaHooks({ pageWindow, onCandidate }) {
 
       this.addEventListener?.('loadend', () => {
         let mimeType = '';
+        let manifestText = '';
         try {
           mimeType = this.getResponseHeader?.('content-type') || '';
         } catch {
           // ignore
         }
+        const responseUrl = this.responseURL || requestUrls.get(this) || '';
+        const classified = classifyNetworkMedia({ src: responseUrl, mimeType }, { baseUrl });
+        if (classified?.type === 'm3u8') {
+          try {
+            if (!this.responseType || this.responseType === 'text') {
+              manifestText = String(this.responseText || '');
+            }
+          } catch {
+            // 跨域或非文本 XHR 可能不允许读取 responseText。
+          }
+        }
         safeEmit({
-          src: this.responseURL || requestUrls.get(this) || '',
+          src: responseUrl,
           mimeType,
+          manifestText,
           captureSource: 'network-xhr-response',
         });
       }, { once: true });

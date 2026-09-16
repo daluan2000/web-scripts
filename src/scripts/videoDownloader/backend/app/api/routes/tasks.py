@@ -11,6 +11,8 @@ from app.core.models import (
     CleanupPartDirsResponse,
     OpenDirectoryRequest,
     OpenDirectoryResponse,
+    OutputNameCheckRequest,
+    OutputNameCheckResponse,
     TaskCancelResponse,
     TaskCreateRequest,
     TaskCreateResponse,
@@ -37,6 +39,28 @@ async def create_task(
         taskName=task.task_name,
         outputDir=task.output_dir,
         status=task.status,
+    )
+
+
+@router.post("/check-name", response_model=OutputNameCheckResponse)
+async def check_output_name(
+    payload: OutputNameCheckRequest,
+    manager: DownloadTaskManager = Depends(get_task_manager),
+) -> OutputNameCheckResponse:
+    try:
+        normalized_name, available = await manager.check_output_name(payload.fileName)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    message = ""
+    if not available:
+        message = "文件名已存在，请修改文件名"
+
+    return OutputNameCheckResponse(
+        available=available,
+        requestedName=payload.fileName,
+        normalizedName=normalized_name,
+        message=message,
     )
 
 

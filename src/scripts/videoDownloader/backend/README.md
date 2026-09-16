@@ -8,8 +8,21 @@
 - WebSocket 实时推送任务状态和进度
 - 下载完成后文件直接保存到本机目录
 - 支持单视频文件名自定义
+- 使用独立 UUID 作为任务 ID，任务 ID 与输出文件名解耦
+- 创建任务前检查同名文件和同名运行中任务；冲突时拒绝创建，不覆盖、不自动改名
 - 支持从前端请求“打开下载目录”
 - 支持 yt-dlp 可处理的 HLS/m3u8、DASH/MPD、视频直链及站点页面
+
+## 支持范围
+
+| 输入类型 | 处理方式 |
+|----------|----------|
+| HLS / m3u8 | 交给 yt-dlp 下载清单及媒体分片 |
+| DASH / MPD | 交给 yt-dlp 下载；音视频分轨时使用 FFmpeg 合并 |
+| 常见视频直链 | `mp4`、`webm`、`m4v`、`mov`、`mkv`、`avi`、`flv`、`ts` 可直接下载，失败时回退到 yt-dlp |
+| 站点播放页 | 使用 yt-dlp 的站点解析器尝试提取 |
+
+不支持绕过 DRM。登录状态、HttpOnly Cookie、防盗链、地区限制和站点验证码也可能导致下载失败。
 
 ## FFmpeg
 
@@ -82,10 +95,12 @@ python app/main.py
 ## API
 
 - `POST /api/video/tasks` 创建任务
+- `POST /api/video/tasks/check-name` 检查输出文件名是否可用
 - `GET /api/video/tasks` 查询任务列表
 - `GET /api/video/tasks/{taskId}` 查询单任务
 - `POST /api/video/tasks/{taskId}/cancel` 取消任务
 - `POST /api/video/tasks/open-dir` 打开目录（支持 taskId；为空时打开默认下载目录）
+- `POST /api/video/tasks/cleanup-part-dirs` 清理非运行中任务的临时目录
 - `WS /api/video/tasks/ws` 订阅任务事件（可选 `?taskId=...`）
 
 ## HTTPS 说明

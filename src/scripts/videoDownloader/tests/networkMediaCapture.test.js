@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   NetworkMediaCollector,
   classifyNetworkMedia,
+  extractHlsChildManifestUrls,
   installNetworkMediaHooks,
 } from '../networkMediaCapture.js';
 
@@ -69,6 +70,56 @@ test('collector deduplicates candidates and enforces its size limit', () => {
     snapshot.videos.map((video) => video.src),
     ['https://cdn.example/two.webm', 'https://cdn.example/three.m3u8']
   );
+});
+
+test('extracts variant and rendition URLs from an HLS master manifest', () => {
+  const urls = extractHlsChildManifestUrls(
+    'https://cdn.example/show/master/index.m3u8?token=master',
+    `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",URI="audio/index.m3u8?token=audio"
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720
+720/index.m3u8?token=video
+#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=120000,URI="iframe/index.m3u8"
+`
+  );
+
+  assert.deepEqual(urls, [
+    'https://cdn.example/show/master/audio/index.m3u8?token=audio',
+    'https://cdn.example/show/master/720/index.m3u8?token=video',
+    'https://cdn.example/show/master/iframe/index.m3u8',
+  ]);
+});
+
+test('collector merges captured child manifests into their HLS master entry', () => {
+  const collector = new NetworkMediaCollector();
+  const masterUrl = 'https://cdn.example/show/master.m3u8';
+  const childUrl = 'https://cdn.example/show/720/index.m3u8';
+
+  collector.add(childUrl);
+  collector.add({
+    src: masterUrl,
+    mimeType: 'application/vnd.apple.mpegurl',
+    manifestText: `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=800000
+720/index.m3u8
+`,
+  });
+
+  const snapshot = collector.getSnapshot();
+  assert.equal(snapshot.videos.length, 1);
+  assert.equal(snapshot.videos[0].src, masterUrl);
+  assert.equal(snapshot.videos[0].isMasterManifest, true);
+  assert.equal(snapshot.videos[0].childManifestCount, 1);
+  assert.deepEqual(snapshot.videos[0].relatedManifestUrls, [childUrl]);
+});
+
+test('collector keeps unrelated manifests even when their filenames match', () => {
+  const collector = new NetworkMediaCollector();
+  collector.add('https://cdn.example/show-a/index.m3u8');
+  collector.add('https://cdn.example/show-b/index.m3u8');
+
+  const snapshot = collector.getSnapshot();
+  assert.equal(snapshot.videos.length, 2);
 });
 
 test('collector collapses blob observations to one diagnostic candidate', () => {
